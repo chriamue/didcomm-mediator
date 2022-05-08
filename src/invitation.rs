@@ -24,18 +24,16 @@ pub struct Invitation {
 }
 
 impl Invitation {
-    pub fn new() -> Self {
+    pub fn new(key: String, label: String, service_endpoint: String) -> Self {
         Invitation {
             id: Uuid::new_v4().to_string(),
             typ: "https://didcomm.org/out-of-band/1.0/invitation".to_string(),
-            label: "alice".to_string(),
+            label,
             handshake_protocols: vec!["https://didcomm.org/didexchange/1.0".to_string()],
             services: vec![Service {
                 id: Uuid::new_v4().to_string(),
-                recipient_keys: vec![
-                    "did:key:z6MkpFZ86WuUpihn1mTRbpBCGE6YpCvsBYtZQYnd9jcuAUup".to_string()
-                ],
-                service_endpoint: "ws://localhost:8001".to_string(),
+                recipient_keys: vec![key],
+                service_endpoint,
                 typ: "did-communication".to_string(),
             }],
         }

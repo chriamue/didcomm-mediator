@@ -1,18 +1,29 @@
 #[macro_use]
 extern crate rocket;
-use rocket::serde::json::Json;
+use rocket::{serde::json::Json, State};
 
+mod config;
 mod invitation;
+
+use config::Config;
 use invitation::Invitation;
 
 #[get("/")]
-fn index() -> Json<Invitation> {
-    Json(Invitation::new())
+fn index(config: &State<Config>) -> Json<Invitation> {
+    Json(Invitation::new(
+        config.did.to_string(),
+        config.ident.to_string(),
+        config.ext_service.to_string(),
+    ))
 }
 
 #[launch]
 fn rocket() -> _ {
-    rocket::build().mount("/", routes![index])
+    let rocket = rocket::build();
+    let figment = rocket.figment();
+    let config: Config = figment.extract().expect("config");
+
+    rocket.mount("/", routes![index]).manage(config)
 }
 
 #[cfg(test)]
