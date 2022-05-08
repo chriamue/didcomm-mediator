@@ -4,6 +4,6 @@ pub struct Config {
     pub ident: String,
     pub ext_hostname: String,
     pub ext_service: String,
-    pub key_seed: String,
+    pub key_seed: Option<String>,
     pub did: String,
 }

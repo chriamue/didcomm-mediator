@@ -1,6 +1,7 @@
 #[macro_use]
 extern crate rocket;
-use did_key::{generate, DIDCore, Ed25519KeyPair, KeyPair, CONFIG_JOSE_PUBLIC};
+use base58::{FromBase58, ToBase58};
+use did_key::{generate, DIDCore, Ed25519KeyPair, KeyMaterial, KeyPair, CONFIG_JOSE_PUBLIC};
 use rocket::{response::Redirect, serde::json::Json, State};
 
 mod config;
@@ -31,7 +32,14 @@ fn rocket() -> _ {
     let rocket = rocket::build();
     let figment = rocket.figment();
     let mut config: Config = figment.extract().expect("loading config");
-    let key = generate::<Ed25519KeyPair>(Some(config.key_seed.as_str().as_bytes()));
+    let key = match config.key_seed.clone() {
+        Some(seed) => generate::<Ed25519KeyPair>(Some(&seed.from_base58().unwrap())),
+        None => {
+            let key = generate::<Ed25519KeyPair>(None);
+            println!("Generated Seed: {}", key.private_key_bytes().to_base58());
+            key
+        }
+    };
     let did_doc = key.get_did_document(CONFIG_JOSE_PUBLIC);
     let did = did_doc.id;
     config.did = did;
