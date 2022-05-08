@@ -7,6 +7,8 @@ use rocket::{response::Redirect, serde::json::Json, State};
 
 mod config;
 mod invitation;
+#[cfg(test)]
+mod tests;
 
 use config::Config;
 use invitation::{Invitation, InvitationResponse};
@@ -86,7 +88,7 @@ fn rocket() -> _ {
 }
 
 #[cfg(test)]
-mod tests {
+mod main_tests {
     use super::*;
     use didcomm_rs::{
         crypto::{CryptoAlgorithm, SignatureAlgorithm},
