@@ -40,6 +40,11 @@ impl Invitation {
     }
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct InvitationResponse {
+    pub invitation: Invitation,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
