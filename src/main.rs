@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate rocket;
 use base58::{FromBase58, ToBase58};
-use did_key::{generate, DIDCore, Ed25519KeyPair, KeyMaterial, KeyPair, CONFIG_JOSE_PUBLIC};
+use did_key::{generate, DIDCore, KeyMaterial, KeyPair, X25519KeyPair, CONFIG_JOSE_PUBLIC};
 use didcomm_rs::Message;
 use rocket::{response::Redirect, serde::json::Json, State};
 
@@ -35,7 +35,7 @@ fn oob_invitation_endpoint(
 
     let response = InvitationResponse {
         invitation: Invitation::new(
-            did.to_string(),
+            did,
             config.ident.to_string(),
             config.ext_service.to_string(),
         ),
@@ -63,9 +63,9 @@ fn rocket() -> _ {
     let figment = rocket.figment();
     let mut config: Config = figment.extract().expect("loading config");
     let key = match config.key_seed.clone() {
-        Some(seed) => generate::<Ed25519KeyPair>(Some(&seed.from_base58().unwrap())),
+        Some(seed) => generate::<X25519KeyPair>(Some(&seed.from_base58().unwrap())),
         None => {
-            let key = generate::<Ed25519KeyPair>(None);
+            let key = generate::<X25519KeyPair>(None);
             println!("Generated Seed: {}", key.private_key_bytes().to_base58());
             key
         }
@@ -91,6 +91,7 @@ fn rocket() -> _ {
 #[cfg(test)]
 mod main_tests {
     use super::*;
+    use did_key::Ed25519KeyPair;
     use didcomm_rs::{
         crypto::{CryptoAlgorithm, SignatureAlgorithm},
         Message,
@@ -138,23 +139,28 @@ mod main_tests {
         let recipient_did = invitation.services[0].recipient_keys[0].to_string();
         let recipient_key = did_key::resolve(&recipient_did).unwrap();
 
-        let key = generate::<Ed25519KeyPair>(None);
+        let key = generate::<X25519KeyPair>(None);
+        let sign_key = generate::<Ed25519KeyPair>(None);
         let did_doc = key.get_did_document(CONFIG_JOSE_PUBLIC);
-        let did = did_doc.id;
+        let did_from = did_doc.id;
 
+        let body = r#"{"foo":"bar"}"#;
         let message = Message::new()
+            .from(&did_from)
+            .to(&[&recipient_did])
+            .body(body)
             .as_jwe(
                 &CryptoAlgorithm::XC20P,
-                Some(recipient_did.as_str().as_bytes().to_vec()),
+                Some(recipient_key.public_key_bytes()),
             )
-            .kid(&recipient_did);
+            .kid(&hex::encode(sign_key.public_key_bytes()));
 
         let ready_to_send = message
             .seal_signed(
                 &key.private_key_bytes(),
-                Some(vec![Some(recipient_did.as_str().as_bytes().to_vec())]),
+                Some(vec![Some(recipient_key.public_key_bytes())]),
                 SignatureAlgorithm::EdDsa,
-                &[key.private_key_bytes(), key.public_key_bytes()].concat(),
+                &[sign_key.private_key_bytes(), sign_key.public_key_bytes()].concat(),
             )
             .unwrap();
 
@@ -163,10 +169,5 @@ mod main_tests {
         let req = req.body(ready_to_send);
         let response = req.dispatch();
         assert_eq!(response.status(), Status::Ok);
-        let invitation_response: InvitationResponse = response.into_json().unwrap();
-        assert_eq!(
-            invitation_response.invitation.services[0].typ,
-            "did-communication"
-        );
     }
 }
