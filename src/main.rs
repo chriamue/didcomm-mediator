@@ -7,6 +7,7 @@ use rocket::{response::Redirect, serde::json::Json, State};
 
 mod config;
 mod invitation;
+mod protocols;
 
 #[cfg(test)]
 mod tests;
