@@ -32,6 +32,7 @@ impl DidExchangeResponseBuilder {
         match &self.message {
             Some(message) => match message["@type"].as_str() {
                 Some("https://didcomm.org/out-of-band/1.0/invitation") => self.build_request(),
+                Some("https://didcomm.org/didexchange/1.0/request") => self.build_response(),
                 _ => Err("unsupported message"),
             },
             None => Err("no message"),
@@ -41,9 +42,25 @@ impl DidExchangeResponseBuilder {
     fn build_request(&mut self) -> Result<Value, &'static str> {
         Ok(json!({
             "@id": Uuid::new_v4(),
+            "~thread": {
+                "pthid": self.message.clone().unwrap()["@id"].as_str().unwrap()
+            },
             "@type": "https://didcomm.org/didexchange/1.0/request",
             "goal": "To create a relationship",
-            "did": self.did.clone().unwrap()
+            "did": self.did.clone().unwrap(),
+            "did_doc~attach": self.did_doc.clone().unwrap()
+        }))
+    }
+
+    fn build_response(&mut self) -> Result<Value, &'static str> {
+        Ok(json!({
+            "@id": Uuid::new_v4(),
+            "~thread": {
+                "pthid": self.message.clone().unwrap()["@id"].as_str().unwrap()
+            },
+            "@type": "https://didcomm.org/didexchange/1.0/response",
+            "did": self.did.clone().unwrap(),
+            "did_doc~attach": self.did_doc.clone().unwrap()
         }))
     }
 }
@@ -51,6 +68,8 @@ impl DidExchangeResponseBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::invitation::Invitation;
+    use did_key::{generate, DIDCore, X25519KeyPair, CONFIG_LD_PUBLIC};
 
     #[test]
     fn test_build_resquest() {
@@ -78,15 +97,59 @@ mod tests {
           }
         "#;
         let invitation = serde_json::from_str(invitation).unwrap();
+        let keypair = generate::<X25519KeyPair>(None);
+        let did_doc = serde_json::to_value(keypair.get_did_document(CONFIG_LD_PUBLIC)).unwrap();
+
         let response = DidExchangeResponseBuilder::new()
             .message(invitation)
             .did("did:key:z6MkpFZ86WuUpihn1mTRbpBCGE6YpCvsBYtZQYnd9jcuAUup".to_string())
+            .did_doc(did_doc)
             .build()
             .unwrap();
 
         assert_eq!(
             response["@type"].as_str(),
             Some("https://didcomm.org/didexchange/1.0/request")
+        );
+
+        println!("{}", serde_json::to_string_pretty(&response).unwrap());
+    }
+
+    #[test]
+    fn test_build_response() {
+        let alice_key = generate::<X25519KeyPair>(None);
+        let bob_key = generate::<X25519KeyPair>(None);
+        let invitation = Invitation::new(
+            "did:key:peer".to_string(),
+            "Alice".to_string(),
+            "".to_string(),
+        );
+        let did_doc = serde_json::to_value(alice_key.get_did_document(CONFIG_LD_PUBLIC)).unwrap();
+
+        let request = DidExchangeResponseBuilder::new()
+            .message(serde_json::to_value(&invitation).unwrap())
+            .did("did:key:z6MkpFZ86WuUpihn1mTRbpBCGE6YpCvsBYtZQYnd9jcuAUup".to_string())
+            .did_doc(did_doc)
+            .build()
+            .unwrap();
+
+        assert_eq!(
+            request["@type"].as_str(),
+            Some("https://didcomm.org/didexchange/1.0/request")
+        );
+
+        let did_doc = serde_json::to_value(bob_key.get_did_document(CONFIG_LD_PUBLIC)).unwrap();
+
+        let response = DidExchangeResponseBuilder::new()
+            .message(request)
+            .did("did:key:z6MkpFZ86WuUpihn1mTRbpBCGE6YpCvsBYtZQYnd9jcuAUup".to_string())
+            .did_doc(did_doc)
+            .build()
+            .unwrap();
+
+        assert_eq!(
+            response["@type"].as_str(),
+            Some("https://didcomm.org/didexchange/1.0/response")
         );
 
         println!("{}", serde_json::to_string_pretty(&response).unwrap());
