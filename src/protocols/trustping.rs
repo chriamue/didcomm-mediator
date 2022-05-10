@@ -11,9 +11,9 @@ pub struct TrustPingResponseBuilder {
 
 impl TrustPingResponseBuilder {
     pub fn new() -> Self {
-        TrustPingResponseBuilder{
+        TrustPingResponseBuilder {
             did: None,
-            message: None
+            message: None,
         }
     }
 
