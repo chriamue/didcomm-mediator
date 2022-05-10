@@ -33,6 +33,7 @@ impl DidExchangeResponseBuilder {
             Some(message) => match message["@type"].as_str() {
                 Some("https://didcomm.org/out-of-band/1.0/invitation") => self.build_request(),
                 Some("https://didcomm.org/didexchange/1.0/request") => self.build_response(),
+                Some("https://didcomm.org/didexchange/1.0/response") => self.build_complete(),
                 _ => Err("unsupported message"),
             },
             None => Err("no message"),
@@ -40,9 +41,11 @@ impl DidExchangeResponseBuilder {
     }
 
     fn build_request(&mut self) -> Result<Value, &'static str> {
+        let id = Uuid::new_v4();
         Ok(json!({
-            "@id": Uuid::new_v4(),
+            "@id": id.to_string(),
             "~thread": {
+                "thid": id.to_string(),
                 "pthid": self.message.clone().unwrap()["@id"].as_str().unwrap()
             },
             "@type": "https://didcomm.org/didexchange/1.0/request",
@@ -56,11 +59,22 @@ impl DidExchangeResponseBuilder {
         Ok(json!({
             "@id": Uuid::new_v4(),
             "~thread": {
-                "pthid": self.message.clone().unwrap()["@id"].as_str().unwrap()
+                "thid": self.message.clone().unwrap()["@id"].as_str().unwrap()
             },
             "@type": "https://didcomm.org/didexchange/1.0/response",
             "did": self.did.clone().unwrap(),
             "did_doc~attach": self.did_doc.clone().unwrap()
+        }))
+    }
+
+    fn build_complete(&mut self) -> Result<Value, &'static str> {
+        Ok(json!({
+            "@id": Uuid::new_v4(),
+            "~thread": {
+                "thid": self.message.clone().unwrap()["~thread"]["thid"].as_str().unwrap(),
+                "pthid": self.message.clone().unwrap()["~thread"]["thid"].as_str().unwrap()
+            },
+            "@type": "https://didcomm.org/didexchange/1.0/complete",
         }))
     }
 }
@@ -153,5 +167,56 @@ mod tests {
         );
 
         println!("{}", serde_json::to_string_pretty(&response).unwrap());
+    }
+
+    #[test]
+    fn test_build_complete() {
+        let alice_key = generate::<X25519KeyPair>(None);
+        let bob_key = generate::<X25519KeyPair>(None);
+        let invitation = Invitation::new(
+            "did:key:peer".to_string(),
+            "Alice".to_string(),
+            "".to_string(),
+        );
+        let did_doc = serde_json::to_value(alice_key.get_did_document(CONFIG_LD_PUBLIC)).unwrap();
+
+        let request = DidExchangeResponseBuilder::new()
+            .message(serde_json::to_value(&invitation).unwrap())
+            .did("did:key:z6MkpFZ86WuUpihn1mTRbpBCGE6YpCvsBYtZQYnd9jcuAUup".to_string())
+            .did_doc(did_doc)
+            .build()
+            .unwrap();
+
+        assert_eq!(
+            request["@type"].as_str(),
+            Some("https://didcomm.org/didexchange/1.0/request")
+        );
+
+        let did_doc = serde_json::to_value(bob_key.get_did_document(CONFIG_LD_PUBLIC)).unwrap();
+
+        let response = DidExchangeResponseBuilder::new()
+            .message(request)
+            .did("did:key:z6MkpFZ86WuUpihn1mTRbpBCGE6YpCvsBYtZQYnd9jcuAUup".to_string())
+            .did_doc(did_doc)
+            .build()
+            .unwrap();
+
+        assert_eq!(
+            response["@type"].as_str(),
+            Some("https://didcomm.org/didexchange/1.0/response")
+        );
+
+        let complete = DidExchangeResponseBuilder::new()
+            .message(response)
+            .did("did:key:z6MkpFZ86WuUpihn1mTRbpBCGE6YpCvsBYtZQYnd9jcuAUup".to_string())
+            .build()
+            .unwrap();
+
+        assert_eq!(
+            complete["@type"].as_str(),
+            Some("https://didcomm.org/didexchange/1.0/complete")
+        );
+
+        println!("{}", serde_json::to_string_pretty(&complete).unwrap());
     }
 }
