@@ -53,8 +53,12 @@ fn didcomm_endpoint(key: &State<KeyPair>, body: Json<Value>) -> Json<Value> {
     println!("{}", body_str);
 
     let received = Message::receive(&body_str, Some(&key.private_key_bytes()), None, None).unwrap();
+    let typ: String = received.get_didcomm_header().m_type.to_string();
+    if typ.starts_with("https://didcomm.org/trust-ping/2.0") {
+        //return Json(protocols::trustping::TrustPingResponseBuilder::new().message(received).build().unwrap())
+    }
 
-    println!("received {}", received.as_raw_json().unwrap());
+    //println!("received {:?}", received);
     Json(serde_json::from_str("{}").unwrap())
 }
 
@@ -171,4 +175,49 @@ mod main_tests {
         let response = req.dispatch();
         assert_eq!(response.status(), Status::Ok);
     }
+
+#[test]
+fn test_trust_ping() {
+    let rocket = rocket();
+        let client = Client::tracked(rocket).unwrap();
+        let req = client.get("/invitation");
+        let response = req.dispatch();
+        assert_eq!(response.status(), Status::Ok);
+        let invitation_response: InvitationResponse = response.into_json().unwrap();
+        let invitation = invitation_response.invitation;
+        let recipient_did = invitation.services[0].recipient_keys[0].to_string();
+        let recipient_key = did_key::resolve(&recipient_did).unwrap();
+
+        let key = generate::<X25519KeyPair>(None);
+        let sign_key = generate::<Ed25519KeyPair>(None);
+        let did_doc = key.get_did_document(CONFIG_JOSE_PUBLIC);
+        let did_from = did_doc.id;
+
+        let body = r#"{"foo":"bar"}"#;
+        let message = Message::new()
+            .from(&did_from)
+            .to(&[&recipient_did])
+            .body(body)
+            .as_jwe(
+                &CryptoAlgorithm::XC20P,
+                Some(recipient_key.public_key_bytes()),
+            )
+            .kid(&hex::encode(sign_key.public_key_bytes()));
+
+        let ready_to_send = message
+            .seal_signed(
+                &key.private_key_bytes(),
+                Some(vec![Some(recipient_key.public_key_bytes())]),
+                SignatureAlgorithm::EdDsa,
+                &[sign_key.private_key_bytes(), sign_key.public_key_bytes()].concat(),
+            )
+            .unwrap();
+
+        let mut req = client.post("/didcomm");
+        req.add_header(ContentType::JSON);
+        let req = req.body(ready_to_send);
+        let response = req.dispatch();
+        assert_eq!(response.status(), Status::Ok);
+}
+
 }

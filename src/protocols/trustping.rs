@@ -1,12 +1,12 @@
 // https://identity.foundation/didcomm-messaging/spec/#trust-ping-protocol-20
-
+use didcomm_rs::Message;
 use serde_json::{json, Value};
 use uuid::Uuid;
 
 #[derive(Default)]
 pub struct TrustPingResponseBuilder {
     did: Option<String>,
-    message: Option<Value>,
+    message: Option<Message>,
 }
 
 impl TrustPingResponseBuilder {
@@ -22,47 +22,41 @@ impl TrustPingResponseBuilder {
         self
     }
 
-    pub fn message(&mut self, message: Value) -> &mut Self {
+    pub fn message(&mut self, message: Message) -> &mut Self {
         self.message = Some(message);
         self
     }
 
-    pub fn build(&mut self) -> Result<Value, &'static str> {
+    pub fn build(&mut self) -> Result<Message, &'static str> {
         match &self.message {
-            Some(message) => match message["type"].as_str() {
-                Some("https://didcomm.org/trust-ping/2.0/ping") => self.build_response(),
+            Some(message) => match message.get_didcomm_header().m_type.as_str() {
+                "https://didcomm.org/trust-ping/2.0/ping" => self.build_response(),
                 _ => Err("unsupported message"),
             },
             None => self.build_ping(),
         }
     }
 
-    fn build_ping(&mut self) -> Result<Value, &'static str> {
+    fn build_ping(&mut self) -> Result<Message, &'static str> {
         let id = Uuid::new_v4();
-        Ok(json!({
-          "type": "https://didcomm.org/trust-ping/2.0/ping",
-          "id": id,
-          "from": self.did.clone().unwrap(),
-          "body": {
-              "response_requested": true
-          }
-        }))
+        Ok(Message::new()
+            .m_type("https://didcomm.org/trust-ping/2.0/ping")
+            .add_header_field("id".to_string(), id.to_string())
+            .body(&json!({"response_requested": true}).to_string()))
     }
 
-    fn build_response(&mut self) -> Result<Value, &'static str> {
+    fn build_response(&mut self) -> Result<Message, &'static str> {
         let id = Uuid::new_v4();
-        Ok(json!({
-          "type": "https://didcomm.org/trust-ping/2.0/ping-response",
-          "id": id,
-          "thid": self.message.clone().unwrap()["id"].as_str().unwrap()
-        }))
+        Ok(Message::new()
+            .m_type("https://didcomm.org/trust-ping/2.0/ping-response")
+            .add_header_field("id".to_string(), id.to_string())
+            .thid(&self.message.as_ref().unwrap().get_didcomm_header().id))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use did_key::{generate, DIDCore, X25519KeyPair, CONFIG_LD_PUBLIC};
 
     #[test]
     fn test_build_ping() {
@@ -72,8 +66,8 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            response["type"].as_str(),
-            Some("https://didcomm.org/trust-ping/2.0/ping")
+            response.get_didcomm_header().m_type,
+            "https://didcomm.org/trust-ping/2.0/ping"
         );
 
         println!("{}", serde_json::to_string_pretty(&response).unwrap());
@@ -87,8 +81,8 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            ping["type"].as_str(),
-            Some("https://didcomm.org/trust-ping/2.0/ping")
+            ping.get_didcomm_header().m_type,
+            "https://didcomm.org/trust-ping/2.0/ping"
         );
 
         let response = TrustPingResponseBuilder::new()
@@ -98,8 +92,8 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            response["type"].as_str(),
-            Some("https://didcomm.org/trust-ping/2.0/ping-response")
+            response.get_didcomm_header().m_type,
+            "https://didcomm.org/trust-ping/2.0/ping-response"
         );
 
         println!("{}", serde_json::to_string_pretty(&response).unwrap());
