@@ -1,11 +1,11 @@
-use super::*;
 use arrayref::array_ref;
 use base58::FromBase58;
-use did_key::{generate, Ed25519KeyPair, X25519KeyPair};
+use did_key::{generate, Ed25519KeyPair, KeyMaterial, X25519KeyPair};
 use didcomm_rs::{
     crypto::{CryptoAlgorithm, SignatureAlgorithm},
     Message,
 };
+use serde_json::Value;
 use x25519_dalek::{PublicKey, StaticSecret};
 
 #[test]

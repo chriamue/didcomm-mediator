@@ -1,7 +1,6 @@
 // https://identity.foundation/didcomm-messaging/spec/#trust-ping-protocol-20
 use didcomm_rs::Message;
 use serde_json::json;
-use uuid::Uuid;
 
 #[derive(Default)]
 pub struct TrustPingResponseBuilder {
@@ -38,18 +37,14 @@ impl TrustPingResponseBuilder {
     }
 
     fn build_ping(&mut self) -> Result<Message, &'static str> {
-        let id = Uuid::new_v4();
         Ok(Message::new()
             .m_type("https://didcomm.org/trust-ping/2.0/ping")
-            .add_header_field("id".to_string(), id.to_string())
             .body(&json!({"response_requested": true}).to_string()))
     }
 
     fn build_response(&mut self) -> Result<Message, &'static str> {
-        let id = Uuid::new_v4();
         Ok(Message::new()
             .m_type("https://didcomm.org/trust-ping/2.0/ping-response")
-            .add_header_field("id".to_string(), id.to_string())
             .thid(&self.message.as_ref().unwrap().get_didcomm_header().id))
     }
 }

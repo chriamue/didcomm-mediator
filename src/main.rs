@@ -1,10 +1,16 @@
 #[macro_use]
 extern crate rocket;
 use base58::{FromBase58, ToBase58};
-use did_key::{generate, DIDCore, KeyMaterial, KeyPair, X25519KeyPair, CONFIG_JOSE_PUBLIC};
+use did_key::{
+    generate, DIDCore, Ed25519KeyPair, KeyMaterial, KeyPair, X25519KeyPair, CONFIG_JOSE_PUBLIC,
+};
 use didcomm_mediator::config::Config;
 use didcomm_mediator::invitation::{Invitation, InvitationResponse};
-use didcomm_rs::Message;
+use didcomm_mediator::protocols::trustping::TrustPingResponseBuilder;
+use didcomm_rs::{
+    crypto::{CryptoAlgorithm, SignatureAlgorithm},
+    Message,
+};
 use rocket::{response::Redirect, serde::json::Json, State};
 use serde_json::Value;
 
@@ -38,20 +44,50 @@ fn oob_invitation_endpoint(
 }
 
 #[post("/didcomm", format = "any", data = "<body>")]
-fn didcomm_endpoint(key: &State<KeyPair>, body: Json<Value>) -> Json<Value> {
+fn didcomm_endpoint(
+    config: &State<Config>,
+    key: &State<KeyPair>,
+    body: Json<Value>,
+) -> Json<Value> {
     let body_str = serde_json::to_string(&body.into_inner()).unwrap();
 
     #[cfg(test)]
     println!("{}", body_str);
 
     let received = Message::receive(&body_str, Some(&key.private_key_bytes()), None, None).unwrap();
+
+    let recipient_did = received.get_didcomm_header().from.as_ref().unwrap();
+    let recipient_key = did_key::resolve(&recipient_did).unwrap();
+
     let typ: String = received.get_didcomm_header().m_type.to_string();
+    let response: Message;
     if typ.starts_with("https://didcomm.org/trust-ping/2.0") {
-        //return Json(protocols::trustping::TrustPingResponseBuilder::new().message(received).build().unwrap())
+        response = TrustPingResponseBuilder::new()
+            .message(received)
+            .build()
+            .unwrap();
+    } else {
+        return Json(serde_json::from_str("{}").unwrap());
     }
 
-    //println!("received {:?}", received);
-    Json(serde_json::from_str("{}").unwrap())
+    let sign_key = generate::<Ed25519KeyPair>(None);
+    let response = response
+        .from(&config.did)
+        .as_jwe(
+            &CryptoAlgorithm::XC20P,
+            Some(recipient_key.public_key_bytes()),
+        )
+        .kid(&hex::encode(sign_key.public_key_bytes()));
+
+    let ready_to_send = response
+        .seal_signed(
+            &key.private_key_bytes(),
+            Some(vec![Some(recipient_key.public_key_bytes())]),
+            SignatureAlgorithm::EdDsa,
+            &[sign_key.private_key_bytes(), sign_key.public_key_bytes()].concat(),
+        )
+        .unwrap();
+    Json(serde_json::from_str(&ready_to_send).unwrap())
 }
 
 #[launch]
@@ -88,11 +124,6 @@ fn rocket() -> _ {
 #[cfg(test)]
 mod main_tests {
     use super::*;
-    use did_key::Ed25519KeyPair;
-    use didcomm_rs::{
-        crypto::{CryptoAlgorithm, SignatureAlgorithm},
-        Message,
-    };
     use rocket::http::{ContentType, Status};
     use rocket::local::blocking::Client;
 
@@ -185,11 +216,11 @@ mod main_tests {
         let did_doc = key.get_did_document(CONFIG_JOSE_PUBLIC);
         let did_from = did_doc.id;
 
-        let body = r#"{"foo":"bar"}"#;
-        let message = Message::new()
+        let message = TrustPingResponseBuilder::new()
+            .build()
+            .unwrap()
             .from(&did_from)
             .to(&[&recipient_did])
-            .body(body)
             .as_jwe(
                 &CryptoAlgorithm::XC20P,
                 Some(recipient_key.public_key_bytes()),
@@ -210,5 +241,9 @@ mod main_tests {
         let req = req.body(ready_to_send);
         let response = req.dispatch();
         assert_eq!(response.status(), Status::Ok);
+        let response_json = response.into_string().unwrap();
+        println!("{}", response_json);
+        let received = Message::receive(&response_json, Some(&key.private_key_bytes()), None, None);
+        assert!(&received.is_ok());
     }
 }
