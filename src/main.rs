@@ -3,6 +3,7 @@ extern crate rocket;
 use base58::{FromBase58, ToBase58};
 use did_key::{
     generate, DIDCore, Ed25519KeyPair, KeyMaterial, KeyPair, X25519KeyPair, CONFIG_JOSE_PUBLIC,
+    CONFIG_LD_PRIVATE, CONFIG_LD_PUBLIC,
 };
 use didcomm_mediator::config::Config;
 use didcomm_mediator::invitation::{Invitation, InvitationResponse};
@@ -41,6 +42,21 @@ fn oob_invitation_endpoint(
     };
 
     Json(response)
+}
+
+#[get("/.well-known/did.json")]
+fn did_web_endpoint(config: &State<Config>, key: &State<KeyPair>) -> Json<Value> {
+    let mut did_doc = key.get_did_document(CONFIG_LD_PUBLIC);
+    did_doc.verification_method[0].private_key = None;
+    let mut did_doc = serde_json::to_value(&did_doc).unwrap();
+    did_doc["service"] = serde_json::json!([
+      {
+        "id": "2e9e814a-c1e1-416e-a21a-a4182809950c",
+        "serviceEndpoint": config.ext_service,
+        "type": "did-communication"
+      }
+    ]);
+    Json(did_doc)
 }
 
 #[post("/didcomm", format = "any", data = "<body>")]
@@ -114,7 +130,8 @@ fn rocket() -> _ {
                 index,
                 invitation_endpoint,
                 didcomm_endpoint,
-                oob_invitation_endpoint
+                oob_invitation_endpoint,
+                did_web_endpoint
             ],
         )
         .manage(config)

@@ -6,7 +6,7 @@ did = "did:key:z6MkpFZ86WuUpihn1mTRbpBCGE6YpCvsBYtZQYnd9jcuAUup"
 [debug]
 port = 8000
 ext_hostname = "http://localhost:8000"
-ext_service = "http://localhost:8001"
+ext_service = "http://localhost:8000"
 
 [release]
 address = "0.0.0.0"
