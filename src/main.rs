@@ -2,18 +2,10 @@
 extern crate rocket;
 use base58::{FromBase58, ToBase58};
 use did_key::{generate, DIDCore, KeyMaterial, KeyPair, X25519KeyPair, CONFIG_JOSE_PUBLIC};
+use didcomm_mediator::config::Config;
+use didcomm_mediator::invitation::{Invitation, InvitationResponse};
 use didcomm_rs::Message;
 use rocket::{response::Redirect, serde::json::Json, State};
-
-mod config;
-mod invitation;
-mod protocols;
-
-#[cfg(test)]
-mod tests;
-
-use config::Config;
-use invitation::{Invitation, InvitationResponse};
 use serde_json::Value;
 
 #[get("/", rank = 3)]
@@ -176,9 +168,9 @@ mod main_tests {
         assert_eq!(response.status(), Status::Ok);
     }
 
-#[test]
-fn test_trust_ping() {
-    let rocket = rocket();
+    #[test]
+    fn test_trust_ping() {
+        let rocket = rocket();
         let client = Client::tracked(rocket).unwrap();
         let req = client.get("/invitation");
         let response = req.dispatch();
@@ -218,6 +210,5 @@ fn test_trust_ping() {
         let req = req.body(ready_to_send);
         let response = req.dispatch();
         assert_eq!(response.status(), Status::Ok);
-}
-
+    }
 }

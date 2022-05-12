@@ -1,6 +1,6 @@
 // https://identity.foundation/didcomm-messaging/spec/#trust-ping-protocol-20
 use didcomm_rs::Message;
-use serde_json::{json, Value};
+use serde_json::json;
 use uuid::Uuid;
 
 #[derive(Default)]

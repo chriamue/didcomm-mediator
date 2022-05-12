@@ -43,7 +43,6 @@ impl DiscoverFeaturesResponseBuilder {
     }
 
     fn build_disclose(&mut self) -> Result<Value, &'static str> {
-        let id = Uuid::new_v4();
         Ok(json!({
             "type": "https://didcomm.org/discover-features/1.0/disclose",
             "thid": self.message.clone().unwrap()["id"].as_str().unwrap(),
