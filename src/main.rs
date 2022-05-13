@@ -3,7 +3,7 @@ extern crate rocket;
 use base58::{FromBase58, ToBase58};
 use did_key::{
     generate, DIDCore, Ed25519KeyPair, KeyMaterial, KeyPair, X25519KeyPair, CONFIG_JOSE_PUBLIC,
-    CONFIG_LD_PRIVATE, CONFIG_LD_PUBLIC,
+    CONFIG_LD_PUBLIC,
 };
 use didcomm_mediator::config::Config;
 use didcomm_mediator::connections::Connections;

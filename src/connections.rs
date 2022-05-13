@@ -43,6 +43,13 @@ impl Connections {
             }
         }
     }
+
+    pub fn get_next(&mut self, did: String) -> Option<Message> {
+        match self.connections.get_mut(&did) {
+            Some(connection) => connection.messages.pop_front(),
+            None => None,
+        }
+    }
 }
 
 #[cfg(test)]
