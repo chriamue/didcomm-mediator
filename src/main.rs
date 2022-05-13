@@ -76,18 +76,17 @@ fn didcomm_endpoint(
     let received = Message::receive(&body_str, Some(&key.private_key_bytes()), None, None).unwrap();
 
     let recipient_did = received.get_didcomm_header().from.as_ref().unwrap();
-    let recipient_key = did_key::resolve(&recipient_did).unwrap();
+    let recipient_key = did_key::resolve(recipient_did).unwrap();
 
     let typ: String = received.get_didcomm_header().m_type.to_string();
-    let response: Message;
-    if typ.starts_with("https://didcomm.org/trust-ping/2.0") {
-        response = TrustPingResponseBuilder::new()
+    let response: Message = if typ.starts_with("https://didcomm.org/trust-ping/2.0") {
+        TrustPingResponseBuilder::new()
             .message(received)
             .build()
-            .unwrap();
+            .unwrap()
     } else {
         return Json(serde_json::from_str("{}").unwrap());
-    }
+    };
 
     let sign_key = generate::<Ed25519KeyPair>(None);
     let response = response
@@ -97,7 +96,6 @@ fn didcomm_endpoint(
             Some(recipient_key.public_key_bytes()),
         )
         .kid(&hex::encode(sign_key.public_key_bytes()));
-
     {
         let mut connections = connections.try_lock().unwrap();
         connections.insert_message(response.clone());

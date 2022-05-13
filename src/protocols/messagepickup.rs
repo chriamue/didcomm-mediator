@@ -1,0 +1,169 @@
+// https://github.com/hyperledger/aries-rfcs/tree/main/features/0212-pickup
+use crate::connections::Connections;
+use chrono::{DateTime, Utc};
+use didcomm_rs::Message;
+use serde::{Deserialize, Serialize};
+use serde_json::json;
+use std::sync::{Arc, Mutex};
+use uuid::Uuid;
+
+#[derive(Default)]
+pub struct MessagePickupResponseBuilder {
+    did: Option<String>,
+    message: Option<Message>,
+    connections: Option<Arc<Mutex<Connections>>>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct MessagePickupStatus {
+    #[serde(rename = "@id")]
+    pub id: String,
+    #[serde(rename = "@type")]
+    pub m_type: String,
+    pub message_count: u32,
+    pub duration_waited: u32,
+    pub last_added_time: DateTime<Utc>,
+    pub last_delivered_time: DateTime<Utc>,
+    pub last_removed_time: DateTime<Utc>,
+    pub total_size: u32,
+}
+
+impl Default for MessagePickupStatus {
+    fn default() -> Self {
+        MessagePickupStatus {
+            id: Uuid::new_v4().to_string(),
+            m_type: "https://didcomm.org/messagepickup/1.0/status".to_string(),
+            message_count: 0,
+            duration_waited: 0,
+            last_added_time: Utc::now(),
+            last_delivered_time: Utc::now(),
+            last_removed_time: Utc::now(),
+            total_size: 0,
+        }
+    }
+}
+
+impl MessagePickupResponseBuilder {
+    pub fn new() -> Self {
+        MessagePickupResponseBuilder {
+            did: None,
+            message: None,
+            connections: None,
+        }
+    }
+
+    pub fn did(&mut self, did: String) -> &mut Self {
+        self.did = Some(did);
+        self
+    }
+
+    pub fn message(&mut self, message: Message) -> &mut Self {
+        self.message = Some(message);
+        self
+    }
+
+    pub fn connections(&mut self, connections: Arc<Mutex<Connections>>) -> &mut Self {
+        self.connections = Some(connections);
+        self
+    }
+
+    pub fn build(&mut self) -> Result<Message, &'static str> {
+        match &self.message {
+            Some(message) => match message.get_didcomm_header().m_type.as_str() {
+                "https://didcomm.org/messagepickup/1.0/status-request" => self.build_status(),
+                _ => Err("unsupported message"),
+            },
+            None => self.build_status_request(),
+        }
+    }
+
+    fn build_status_request(&mut self) -> Result<Message, &'static str> {
+        let id = Uuid::new_v4();
+        Ok(Message::new()
+            .m_type("https://didcomm.org/messagepickup/1.0/status-request")
+            .body(
+                &json!({
+                    "@id": id,
+                    "@type": "https://didcomm.org/messagepickup/1.0/status-request"
+                })
+                .to_string(),
+            ))
+    }
+
+    fn build_status(&mut self) -> Result<Message, &'static str> {
+        let status: MessagePickupStatus = match &self.connections {
+            Some(connections) => {
+                let connections = connections.try_lock().unwrap();
+                let connection = connections.connections.get(self.did.as_ref().unwrap());
+                match connection {
+                    Some(connection) => {
+                        let mut status = MessagePickupStatus::default();
+                        status.message_count = connection.messages.len() as u32;
+                        status
+                    }
+                    _ => MessagePickupStatus::default(),
+                }
+            }
+            None => MessagePickupStatus::default(),
+        };
+
+        Ok(Message::new()
+            .m_type("https://didcomm.org/messagepickup/1.0/status")
+            .thid(&self.message.as_ref().unwrap().get_didcomm_header().id)
+            .body(&serde_json::to_string(&status).unwrap()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_build_status_request() {
+        let response = MessagePickupResponseBuilder::new()
+            .did("did:test".to_string())
+            .build()
+            .unwrap();
+        assert_eq!(
+            response.get_didcomm_header().m_type,
+            "https://didcomm.org/messagepickup/1.0/status-request"
+        );
+        println!("{}", serde_json::to_string_pretty(&response).unwrap());
+    }
+
+    #[test]
+    fn test_build_status() {
+        let mut request = MessagePickupResponseBuilder::new()
+            .did("did:test".to_string())
+            .build()
+            .unwrap();
+        request = request.from("did:test");
+
+        assert_eq!(
+            request.get_didcomm_header().m_type,
+            "https://didcomm.org/messagepickup/1.0/status-request"
+        );
+
+        let mut connections = Connections::default();
+        let message = Message::new().to(&["did:test"]);
+        connections.insert_message(message);
+
+        let response = MessagePickupResponseBuilder::new()
+            .connections(Arc::new(Mutex::new(connections)))
+            .message(request)
+            .did("did:test".to_string())
+            .build()
+            .unwrap();
+
+        assert_eq!(
+            response.get_didcomm_header().m_type,
+            "https://didcomm.org/messagepickup/1.0/status"
+        );
+        let response_body = response.get_body().unwrap();
+        assert_ne!(response_body, "{}");
+        let status: MessagePickupStatus = serde_json::from_str(&response_body).unwrap();
+        assert_eq!(status.message_count, 1);
+
+        println!("{}", serde_json::to_string_pretty(&response).unwrap());
+    }
+}
