@@ -6,6 +6,7 @@ use did_key::{
     CONFIG_LD_PRIVATE, CONFIG_LD_PUBLIC,
 };
 use didcomm_mediator::config::Config;
+use didcomm_mediator::connections::Connections;
 use didcomm_mediator::invitation::{Invitation, InvitationResponse};
 use didcomm_mediator::protocols::trustping::TrustPingResponseBuilder;
 use didcomm_rs::{
@@ -14,6 +15,7 @@ use didcomm_rs::{
 };
 use rocket::{response::Redirect, serde::json::Json, State};
 use serde_json::Value;
+use std::sync::{Arc, Mutex};
 
 #[get("/", rank = 3)]
 fn index() -> Redirect {
@@ -63,6 +65,7 @@ fn did_web_endpoint(config: &State<Config>, key: &State<KeyPair>) -> Json<Value>
 fn didcomm_endpoint(
     config: &State<Config>,
     key: &State<KeyPair>,
+    connections: &State<Arc<Mutex<Connections>>>,
     body: Json<Value>,
 ) -> Json<Value> {
     let body_str = serde_json::to_string(&body.into_inner()).unwrap();
@@ -95,6 +98,11 @@ fn didcomm_endpoint(
         )
         .kid(&hex::encode(sign_key.public_key_bytes()));
 
+    {
+        let mut connections = connections.try_lock().unwrap();
+        connections.insert_message(response.clone());
+    }
+
     let ready_to_send = response
         .seal_signed(
             &key.private_key_bytes(),
@@ -123,6 +131,8 @@ fn rocket() -> _ {
     let did = did_doc.id;
     config.did = did;
 
+    let connections = Arc::new(Mutex::new(Connections::new()));
+
     rocket
         .mount(
             "/",
@@ -136,6 +146,7 @@ fn rocket() -> _ {
         )
         .manage(config)
         .manage(key)
+        .manage(connections)
 }
 
 #[cfg(test)]
