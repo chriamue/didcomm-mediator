@@ -1,6 +1,7 @@
 // https://identity.foundation/didcomm-messaging/spec/#trust-ping-protocol-20
 use crate::connections::Connections;
 use crate::handler::{DidcommHandler, HandlerResponse};
+use crate::message::sign_and_encrypt_message;
 use did_key::KeyPair;
 use did_key::{DIDCore, CONFIG_LD_PUBLIC};
 use didcomm_rs::Message;
@@ -74,6 +75,8 @@ impl DidcommHandler for TrustPingHandler {
                 .did(did)
                 .build()
                 .unwrap();
+            let response = sign_and_encrypt_message(request, &response, key.unwrap());
+
             HandlerResponse::Response(serde_json::to_value(&response).unwrap())
         } else {
             HandlerResponse::Skipped
@@ -131,6 +134,7 @@ mod tests {
     fn test_handler() {
         let key = generate::<X25519KeyPair>(None);
         let ping = TrustPingResponseBuilder::new().build().unwrap();
+        let ping = ping.from(&key.get_did_document(Default::default()).id);
 
         assert_eq!(
             ping.get_didcomm_header().m_type,

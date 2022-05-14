@@ -45,28 +45,18 @@ impl DidExchangeResponseBuilder {
     }
 
     fn build_request(&mut self) -> Result<Message, &'static str> {
+        let thid = self
+            .message
+            .as_ref()
+            .unwrap()
+            .get_didcomm_header()
+            .thid
+            .clone()
+            .unwrap();
         Ok(Message::new()
             .m_type("https://didcomm.org/didexchange/1.0/request")
-            .thid(
-                &self
-                    .message
-                    .as_ref()
-                    .unwrap()
-                    .get_didcomm_header()
-                    .thid
-                    .as_ref()
-                    .unwrap(),
-            )
-            .pthid(
-                &self
-                    .message
-                    .as_ref()
-                    .unwrap()
-                    .get_didcomm_header()
-                    .thid
-                    .as_ref()
-                    .unwrap(),
-            )
+            .thid(&thid)
+            .pthid(&thid)
             .add_header_field("goal".to_string(), "To create a relationship".to_string())
             .add_header_field("did".to_string(), self.did.clone().unwrap())
             .add_header_field(

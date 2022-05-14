@@ -2,8 +2,7 @@
 extern crate rocket;
 use base58::{FromBase58, ToBase58};
 use did_key::{
-    generate, DIDCore, Ed25519KeyPair, KeyMaterial, KeyPair, X25519KeyPair, CONFIG_JOSE_PUBLIC,
-    CONFIG_LD_PUBLIC,
+    generate, DIDCore, KeyMaterial, KeyPair, X25519KeyPair, CONFIG_JOSE_PUBLIC, CONFIG_LD_PUBLIC,
 };
 use didcomm_mediator::config::Config;
 use didcomm_mediator::connections::Connections;
@@ -11,11 +10,8 @@ use didcomm_mediator::handler::{DidcommHandler, HandlerResponse};
 use didcomm_mediator::invitation::{Invitation, InvitationResponse};
 use didcomm_mediator::protocols::didexchange::DidExchangeHandler;
 use didcomm_mediator::protocols::discoverfeatures::DiscoverFeaturesHandler;
-use didcomm_mediator::protocols::trustping::TrustPingResponseBuilder;
-use didcomm_rs::{
-    crypto::{CryptoAlgorithm, SignatureAlgorithm},
-    Message,
-};
+use didcomm_mediator::protocols::trustping::TrustPingHandler;
+use didcomm_rs::Message;
 use rocket::{response::Redirect, serde::json::Json, State};
 use serde_json::Value;
 use std::sync::{Arc, Mutex};
@@ -67,7 +63,6 @@ fn did_web_endpoint(config: &State<Config>, key: &State<KeyPair>) -> Json<Value>
 
 #[post("/didcomm", format = "any", data = "<body>")]
 fn didcomm_endpoint(
-    config: &State<Config>,
     key: &State<KeyPair>,
     connections: &State<Arc<Mutex<Connections>>>,
     body: Json<Value>,
@@ -82,12 +77,13 @@ fn didcomm_endpoint(
     let handlers: Vec<Box<dyn DidcommHandler>> = vec![
         Box::new(DidExchangeHandler::default()),
         Box::new(DiscoverFeaturesHandler::default()),
+        Box::new(TrustPingHandler::default()),
     ];
 
-    let response: Value;
+    let mut response: Value = serde_json::json!({});
     for handler in handlers {
         let connection_locked = connections.try_lock().unwrap();
-        match handler.handle(&received, Some(&key), Some(&connection_locked)) {
+        match handler.handle(&received, Some(key), Some(&connection_locked)) {
             HandlerResponse::Skipped => {}
             HandlerResponse::Processed => {
                 break;
@@ -99,41 +95,7 @@ fn didcomm_endpoint(
         }
     }
 
-    let recipient_did = received.get_didcomm_header().from.as_ref().unwrap();
-    let recipient_key = did_key::resolve(recipient_did).unwrap();
-
-    let typ: String = received.get_didcomm_header().m_type.to_string();
-    let response: Message = if typ.starts_with("https://didcomm.org/trust-ping/2.0") {
-        TrustPingResponseBuilder::new()
-            .message(received)
-            .build()
-            .unwrap()
-    } else {
-        return Json(serde_json::from_str("{}").unwrap());
-    };
-
-    let sign_key = generate::<Ed25519KeyPair>(None);
-    let response = response
-        .from(&config.did)
-        .as_jwe(
-            &CryptoAlgorithm::XC20P,
-            Some(recipient_key.public_key_bytes()),
-        )
-        .kid(&hex::encode(sign_key.public_key_bytes()));
-    {
-        let mut connections = connections.try_lock().unwrap();
-        connections.insert_message(response.clone());
-    }
-
-    let ready_to_send = response
-        .seal_signed(
-            &key.private_key_bytes(),
-            Some(vec![Some(recipient_key.public_key_bytes())]),
-            SignatureAlgorithm::EdDsa,
-            &[sign_key.private_key_bytes(), sign_key.public_key_bytes()].concat(),
-        )
-        .unwrap();
-    Json(serde_json::from_str(&ready_to_send).unwrap())
+    Json(response)
 }
 
 #[launch]
@@ -174,6 +136,9 @@ fn rocket() -> _ {
 #[cfg(test)]
 mod main_tests {
     use super::*;
+    use did_key::Ed25519KeyPair;
+    use didcomm_mediator::protocols::trustping::TrustPingResponseBuilder;
+    use didcomm_rs::crypto::{CryptoAlgorithm, SignatureAlgorithm};
     use rocket::http::{ContentType, Status};
     use rocket::local::blocking::Client;
 
@@ -292,8 +257,10 @@ mod main_tests {
         let response = req.dispatch();
         assert_eq!(response.status(), Status::Ok);
         let response_json = response.into_string().unwrap();
-        println!("{}", response_json);
+        println!("response {}", response_json);
         let received = Message::receive(&response_json, Some(&key.private_key_bytes()), None, None);
-        assert!(&received.is_ok());
+        received.unwrap();
+        //
+        //assert!(&received.is_ok());
     }
 }

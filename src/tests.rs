@@ -1,6 +1,6 @@
 use arrayref::array_ref;
 use base58::FromBase58;
-use did_key::{generate, Ed25519KeyPair, KeyMaterial, X25519KeyPair};
+use did_key::{generate, DIDCore, Ed25519KeyPair, KeyMaterial, X25519KeyPair};
 use didcomm_rs::{
     crypto::{CryptoAlgorithm, SignatureAlgorithm},
     Message,
@@ -91,5 +91,16 @@ fn test_keypairs() {
     assert_eq!(
         bob_public.to_bytes().to_vec(),
         did_key_bob.public_key_bytes()
+    );
+}
+
+#[test]
+fn test_did_key() {
+    let seed = "HBTcN2MrXNRj9xF9oi8QqYyuEPv3JLLjQKuEgW9oxVKP";
+
+    let keypair = generate::<X25519KeyPair>(Some(&seed.from_base58().unwrap()));
+    assert_eq!(
+        keypair.get_did_document(Default::default()).id,
+        "did:key:z6LSrHyXiPBhUbvPUtyUCdf32sniiMGPTAesgHrtEa4FePtr"
     );
 }
