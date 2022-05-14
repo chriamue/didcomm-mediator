@@ -124,11 +124,10 @@ impl MessagePickupResponseBuilder {
                 let connections = connections.try_lock().unwrap();
                 let connection = connections.connections.get(self.did.as_ref().unwrap());
                 match connection {
-                    Some(connection) => {
-                        let mut status = MessagePickupStatus::default();
-                        status.message_count = connection.messages.len() as u32;
-                        status
-                    }
+                    Some(connection) => MessagePickupStatus {
+                        message_count: connection.messages.len() as u32,
+                        ..Default::default()
+                    },
                     _ => MessagePickupStatus::default(),
                 }
             }
