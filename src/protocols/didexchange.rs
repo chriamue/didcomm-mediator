@@ -1,5 +1,5 @@
 use crate::connections::Connections;
-use crate::handler::HandlerResponse;
+use crate::handler::{DidcommHandler, HandlerResponse};
 use did_key::KeyPair;
 use did_key::{DIDCore, CONFIG_LD_PUBLIC};
 use didcomm_rs::Message;
@@ -107,8 +107,8 @@ impl DidExchangeResponseBuilder {
 #[derive(Default)]
 pub struct DidExchangeHandler {}
 
-impl DidExchangeHandler {
-    pub fn handle(
+impl DidcommHandler for DidExchangeHandler {
+    fn handle(
         &self,
         request: &Message,
         key: Option<&KeyPair>,
@@ -128,7 +128,7 @@ impl DidExchangeHandler {
                 .did_doc(serde_json::to_value(&did_doc).unwrap())
                 .build()
                 .unwrap();
-            HandlerResponse::Produced(serde_json::to_value(&response).unwrap())
+            HandlerResponse::Response(serde_json::to_value(&response).unwrap())
         } else {
             HandlerResponse::Skipped
         }

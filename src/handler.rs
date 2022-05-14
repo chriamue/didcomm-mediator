@@ -7,10 +7,10 @@ use serde_json::Value;
 pub enum HandlerResponse {
     Skipped,
     Processed,
-    Produced(Value),
+    Response(Value),
 }
 
-pub trait Handler {
+pub trait DidcommHandler {
     fn handle(
         &self,
         request: &Message,

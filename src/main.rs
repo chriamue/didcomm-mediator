@@ -7,7 +7,10 @@ use did_key::{
 };
 use didcomm_mediator::config::Config;
 use didcomm_mediator::connections::Connections;
+use didcomm_mediator::handler::{DidcommHandler, HandlerResponse};
 use didcomm_mediator::invitation::{Invitation, InvitationResponse};
+use didcomm_mediator::protocols::didexchange::DidExchangeHandler;
+use didcomm_mediator::protocols::discoverfeatures::DiscoverFeaturesHandler;
 use didcomm_mediator::protocols::trustping::TrustPingResponseBuilder;
 use didcomm_rs::{
     crypto::{CryptoAlgorithm, SignatureAlgorithm},
@@ -16,6 +19,7 @@ use didcomm_rs::{
 use rocket::{response::Redirect, serde::json::Json, State};
 use serde_json::Value;
 use std::sync::{Arc, Mutex};
+use std::vec;
 
 #[get("/", rank = 3)]
 fn index() -> Redirect {
@@ -74,6 +78,26 @@ fn didcomm_endpoint(
     println!("{}", body_str);
 
     let received = Message::receive(&body_str, Some(&key.private_key_bytes()), None, None).unwrap();
+
+    let handlers: Vec<Box<dyn DidcommHandler>> = vec![
+        Box::new(DidExchangeHandler::default()),
+        Box::new(DiscoverFeaturesHandler::default()),
+    ];
+
+    let response: Value;
+    for handler in handlers {
+        let connection_locked = connections.try_lock().unwrap();
+        match handler.handle(&received, Some(&key), Some(&connection_locked)) {
+            HandlerResponse::Skipped => {}
+            HandlerResponse::Processed => {
+                break;
+            }
+            HandlerResponse::Response(product) => {
+                response = product;
+                break;
+            }
+        }
+    }
 
     let recipient_did = received.get_didcomm_header().from.as_ref().unwrap();
     let recipient_key = did_key::resolve(recipient_did).unwrap();

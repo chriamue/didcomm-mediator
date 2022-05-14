@@ -1,4 +1,8 @@
 // https://identity.foundation/didcomm-messaging/spec/#trust-ping-protocol-20
+use crate::connections::Connections;
+use crate::handler::{DidcommHandler, HandlerResponse};
+use did_key::KeyPair;
+use did_key::{DIDCore, CONFIG_LD_PUBLIC};
 use didcomm_rs::Message;
 use serde_json::json;
 
@@ -49,9 +53,38 @@ impl TrustPingResponseBuilder {
     }
 }
 
+#[derive(Default)]
+pub struct TrustPingHandler {}
+
+impl DidcommHandler for TrustPingHandler {
+    fn handle(
+        &self,
+        request: &Message,
+        key: Option<&KeyPair>,
+        _connections: Option<&Connections>,
+    ) -> HandlerResponse {
+        if request
+            .get_didcomm_header()
+            .m_type
+            .starts_with("https://didcomm.org/trust-ping/2.0/")
+        {
+            let did = key.unwrap().get_did_document(CONFIG_LD_PUBLIC).id;
+            let response = TrustPingResponseBuilder::new()
+                .message(request.clone())
+                .did(did)
+                .build()
+                .unwrap();
+            HandlerResponse::Response(serde_json::to_value(&response).unwrap())
+        } else {
+            HandlerResponse::Skipped
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use did_key::{generate, X25519KeyPair};
 
     #[test]
     fn test_build_ping() {
@@ -92,5 +125,19 @@ mod tests {
         );
 
         println!("{}", serde_json::to_string_pretty(&response).unwrap());
+    }
+
+    #[test]
+    fn test_handler() {
+        let key = generate::<X25519KeyPair>(None);
+        let ping = TrustPingResponseBuilder::new().build().unwrap();
+
+        assert_eq!(
+            ping.get_didcomm_header().m_type,
+            "https://didcomm.org/trust-ping/2.0/ping"
+        );
+        let handler = TrustPingHandler::default();
+        let response = handler.handle(&ping, Some(&key), None);
+        assert_ne!(response, HandlerResponse::Skipped);
     }
 }

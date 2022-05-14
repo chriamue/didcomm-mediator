@@ -1,7 +1,7 @@
 // https://identity.foundation/didcomm-messaging/spec/#discover-features-protocol-20
 
 use crate::connections::Connections;
-use crate::handler::HandlerResponse;
+use crate::handler::{DidcommHandler, HandlerResponse};
 use did_key::KeyPair;
 use didcomm_rs::Message;
 use serde_json::json;
@@ -64,8 +64,8 @@ impl DiscoverFeaturesResponseBuilder {
 #[derive(Default)]
 pub struct DiscoverFeaturesHandler {}
 
-impl DiscoverFeaturesHandler {
-    pub fn handle(
+impl DidcommHandler for DiscoverFeaturesHandler {
+    fn handle(
         &self,
         request: &Message,
         _key: Option<&KeyPair>,
@@ -80,7 +80,7 @@ impl DiscoverFeaturesHandler {
                 .message(request.clone())
                 .build()
                 .unwrap();
-            HandlerResponse::Produced(serde_json::to_value(&response).unwrap())
+            HandlerResponse::Response(serde_json::to_value(&response).unwrap())
         } else {
             HandlerResponse::Skipped
         }
