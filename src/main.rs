@@ -13,7 +13,10 @@ use didcomm_mediator::protocols::discoverfeatures::DiscoverFeaturesHandler;
 use didcomm_mediator::protocols::messagepickup::MessagePickupHandler;
 use didcomm_mediator::protocols::trustping::TrustPingHandler;
 use didcomm_rs::Message;
+use rocket::fairing::{Fairing, Info, Kind};
+use rocket::http::Header;
 use rocket::{response::Redirect, serde::json::Json, State};
+use rocket::{Request, Response};
 use serde_json::Value;
 use std::sync::{Arc, Mutex};
 use std::vec;
@@ -100,6 +103,28 @@ fn didcomm_endpoint(
     Json(response)
 }
 
+pub struct CORS;
+
+#[rocket::async_trait]
+impl Fairing for CORS {
+    fn info(&self) -> Info {
+        Info {
+            name: "Add CORS headers to responses",
+            kind: Kind::Response,
+        }
+    }
+
+    async fn on_response<'r>(&self, _request: &'r Request<'_>, response: &mut Response<'r>) {
+        response.set_header(Header::new("Access-Control-Allow-Origin", "*"));
+        response.set_header(Header::new(
+            "Access-Control-Allow-Methods",
+            "POST, GET, PATCH, OPTIONS",
+        ));
+        response.set_header(Header::new("Access-Control-Allow-Headers", "*"));
+        response.set_header(Header::new("Access-Control-Allow-Credentials", "true"));
+    }
+}
+
 #[launch]
 fn rocket() -> _ {
     let rocket = rocket::build();
@@ -114,12 +139,16 @@ fn rocket() -> _ {
         }
     };
     let did_doc = key.get_did_document(CONFIG_JOSE_PUBLIC);
-    let did = did_doc.id;
+    let did = did_doc.id.to_string();
+
+    println!("{}", did);
+
     config.did = did;
 
     let connections = Arc::new(Mutex::new(Connections::new()));
 
     rocket
+        .attach(CORS)
         .mount(
             "/",
             routes![
