@@ -1,11 +1,14 @@
 // https://identity.foundation/didcomm-messaging/spec/#discover-features-protocol-20
 
-use serde_json::{json, Value};
-use uuid::Uuid;
+use crate::connections::Connections;
+use crate::handler::HandlerResponse;
+use did_key::KeyPair;
+use didcomm_rs::Message;
+use serde_json::json;
 
 #[derive(Default)]
 pub struct DiscoverFeaturesResponseBuilder {
-    message: Option<Value>,
+    message: Option<Message>,
 }
 
 impl DiscoverFeaturesResponseBuilder {
@@ -13,48 +16,74 @@ impl DiscoverFeaturesResponseBuilder {
         DiscoverFeaturesResponseBuilder { message: None }
     }
 
-    pub fn message(&mut self, message: Value) -> &mut Self {
+    pub fn message(&mut self, message: Message) -> &mut Self {
         self.message = Some(message);
         self
     }
 
-    pub fn build(&mut self) -> Result<Value, &'static str> {
+    pub fn build(&mut self) -> Result<Message, &'static str> {
         match &self.message {
-            Some(message) => match message["type"].as_str() {
-                Some("https://didcomm.org/discover-features/2.0/queries") => self.build_disclose(),
+            Some(message) => match message.get_didcomm_header().m_type.as_str() {
+                "https://didcomm.org/discover-features/2.0/queries" => self.build_disclose(),
                 _ => Err("unsupported message"),
             },
             None => self.build_query(),
         }
     }
 
-    fn build_query(&mut self) -> Result<Value, &'static str> {
-        let id = Uuid::new_v4();
-        Ok(json!({
-            "type": "https://didcomm.org/discover-features/2.0/queries",
-            "id": id,
-            "body": {
-                "queries": [
+    fn build_query(&mut self) -> Result<Message, &'static str> {
+        Ok(Message::new()
+            .m_type("https://didcomm.org/discover-features/2.0/queries")
+            .body(
+                &json!({"queries": [
                     { "feature-type": "protocol", "match": "https://didcomm.org/tictactoe/1.*" },
                     { "feature-type": "goal-code", "match": "org.didcomm.*" }
-                ]
-            }
-        }))
+                ]})
+                .to_string(),
+            ))
     }
 
-    fn build_disclose(&mut self) -> Result<Value, &'static str> {
-        Ok(json!({
-            "type": "https://didcomm.org/discover-features/1.0/disclose",
-            "thid": self.message.clone().unwrap()["id"].as_str().unwrap(),
-            "body":{
-                "disclosures": [
-                    {
-                        "feature-type": "protocol",
-                        "id": "https://didcomm.org/trust-ping"
-                    },
-                ]
-            }
-        }))
+    fn build_disclose(&mut self) -> Result<Message, &'static str> {
+        Ok(Message::new()
+            .m_type("https://didcomm.org/discover-features/1.0/disclose")
+            .thid(&self.message.as_ref().unwrap().get_didcomm_header().id)
+            .body(
+                &json!({
+                    "disclosures": [
+                        {
+                            "feature-type": "protocol",
+                            "id": "https://didcomm.org/trust-ping"
+                        },
+                    ]
+                })
+                .to_string(),
+            ))
+    }
+}
+
+#[derive(Default)]
+pub struct DiscoverFeaturesHandler {}
+
+impl DiscoverFeaturesHandler {
+    pub fn handle(
+        &self,
+        request: &Message,
+        _key: Option<&KeyPair>,
+        _connections: Option<&Connections>,
+    ) -> HandlerResponse {
+        if request
+            .get_didcomm_header()
+            .m_type
+            .starts_with("https://didcomm.org/discover-features/2.0")
+        {
+            let response = DiscoverFeaturesResponseBuilder::new()
+                .message(request.clone())
+                .build()
+                .unwrap();
+            HandlerResponse::Produced(serde_json::to_value(&response).unwrap())
+        } else {
+            HandlerResponse::Skipped
+        }
     }
 }
 
@@ -67,8 +96,8 @@ mod tests {
         let response = DiscoverFeaturesResponseBuilder::new().build().unwrap();
 
         assert_eq!(
-            response["type"].as_str(),
-            Some("https://didcomm.org/discover-features/2.0/queries")
+            response.get_didcomm_header().m_type,
+            "https://didcomm.org/discover-features/2.0/queries"
         );
 
         println!("{}", serde_json::to_string_pretty(&response).unwrap());
@@ -79,8 +108,8 @@ mod tests {
         let ping = DiscoverFeaturesResponseBuilder::new().build().unwrap();
 
         assert_eq!(
-            ping["type"].as_str(),
-            Some("https://didcomm.org/discover-features/2.0/queries")
+            ping.get_didcomm_header().m_type,
+            "https://didcomm.org/discover-features/2.0/queries"
         );
 
         let response = DiscoverFeaturesResponseBuilder::new()
@@ -89,10 +118,23 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            response["type"].as_str(),
-            Some("https://didcomm.org/discover-features/1.0/disclose")
+            response.get_didcomm_header().m_type,
+            "https://didcomm.org/discover-features/1.0/disclose"
         );
 
         println!("{}", serde_json::to_string_pretty(&response).unwrap());
+    }
+
+    #[test]
+    fn test_handler() {
+        let ping = DiscoverFeaturesResponseBuilder::new().build().unwrap();
+
+        assert_eq!(
+            ping.get_didcomm_header().m_type,
+            "https://didcomm.org/discover-features/2.0/queries"
+        );
+        let handler = DiscoverFeaturesHandler::default();
+        let response = handler.handle(&ping, None, None);
+        assert_ne!(response, HandlerResponse::Skipped);
     }
 }
