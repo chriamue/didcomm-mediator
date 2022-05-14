@@ -1,6 +1,10 @@
 // https://github.com/hyperledger/aries-rfcs/tree/main/features/0212-pickup
 use crate::connections::Connections;
+use crate::handler::{DidcommHandler, HandlerResponse};
+use crate::message::sign_and_encrypt_message;
 use chrono::{DateTime, Utc};
+use did_key::KeyPair;
+use did_key::{DIDCore, CONFIG_LD_PUBLIC};
 use didcomm_rs::Message;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -191,9 +195,40 @@ impl MessagePickupResponseBuilder {
     }
 }
 
+#[derive(Default)]
+pub struct MessagePickupHandler {}
+
+impl DidcommHandler for MessagePickupHandler {
+    fn handle(
+        &self,
+        request: &Message,
+        key: Option<&KeyPair>,
+        _connections: Option<&Connections>,
+    ) -> HandlerResponse {
+        if request
+            .get_didcomm_header()
+            .m_type
+            .starts_with("https://didcomm.org/messagepickup/1.0/")
+        {
+            let did = key.unwrap().get_did_document(CONFIG_LD_PUBLIC).id;
+            let response = MessagePickupResponseBuilder::new()
+                .message(request.clone())
+                .did(did)
+                .build()
+                .unwrap();
+            let response = sign_and_encrypt_message(request, &response, key.unwrap());
+
+            HandlerResponse::Response(serde_json::to_value(&response).unwrap())
+        } else {
+            HandlerResponse::Skipped
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use did_key::{generate, X25519KeyPair};
 
     #[test]
     fn test_build_status_request() {
@@ -298,5 +333,23 @@ mod tests {
         assert_eq!(batch.messages_attach.len(), 1);
 
         println!("{}", serde_json::to_string_pretty(&response).unwrap());
+    }
+
+    #[test]
+    fn test_handler() {
+        let key = generate::<X25519KeyPair>(None);
+        let request = MessagePickupResponseBuilder::new()
+            .did("did:test".to_string())
+            .build()
+            .unwrap();
+        let request = request.from(&key.get_did_document(Default::default()).id);
+
+        assert_eq!(
+            request.get_didcomm_header().m_type,
+            "https://didcomm.org/messagepickup/1.0/status-request"
+        );
+        let handler = MessagePickupHandler::default();
+        let response = handler.handle(&request, Some(&key), None);
+        assert_ne!(response, HandlerResponse::Skipped);
     }
 }

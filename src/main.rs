@@ -10,6 +10,7 @@ use didcomm_mediator::handler::{DidcommHandler, HandlerResponse};
 use didcomm_mediator::invitation::{Invitation, InvitationResponse};
 use didcomm_mediator::protocols::didexchange::DidExchangeHandler;
 use didcomm_mediator::protocols::discoverfeatures::DiscoverFeaturesHandler;
+use didcomm_mediator::protocols::messagepickup::MessagePickupHandler;
 use didcomm_mediator::protocols::trustping::TrustPingHandler;
 use didcomm_rs::Message;
 use rocket::{response::Redirect, serde::json::Json, State};
@@ -78,6 +79,7 @@ fn didcomm_endpoint(
         Box::new(DidExchangeHandler::default()),
         Box::new(DiscoverFeaturesHandler::default()),
         Box::new(TrustPingHandler::default()),
+        Box::new(MessagePickupHandler::default()),
     ];
 
     let mut response: Value = serde_json::json!({});
@@ -259,8 +261,7 @@ mod main_tests {
         let response_json = response.into_string().unwrap();
         println!("response {}", response_json);
         let received = Message::receive(&response_json, Some(&key.private_key_bytes()), None, None);
-        received.unwrap();
-        //
-        //assert!(&received.is_ok());
+
+        assert!(&received.is_ok());
     }
 }
