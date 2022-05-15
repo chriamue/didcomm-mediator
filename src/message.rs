@@ -6,16 +6,20 @@ use didcomm_rs::{
 use serde_json::Value;
 
 pub fn sign_and_encrypt_message(request: &Message, response: &Message, key: &KeyPair) -> Value {
+    let recipient_did = request.get_didcomm_header().from.as_ref().unwrap();
+    sign_and_encrypt(response, recipient_did, key)
+}
+
+pub fn sign_and_encrypt(message: &Message, did_to: &String, key: &KeyPair) -> Value {
     let sign_key = generate::<Ed25519KeyPair>(None);
 
     let sender_did = key.get_did_document(Default::default()).id;
-    let recipient_did = request.get_didcomm_header().from.as_ref().unwrap();
-    let recipient_key = did_key::resolve(recipient_did).unwrap();
+    let recipient_key = did_key::resolve(&did_to).unwrap();
 
-    let response = response
+    let response = message
         .clone()
         .from(&sender_did)
-        .to(&[recipient_did])
+        .to(&[&did_to])
         .as_jwe(
             &CryptoAlgorithm::XC20P,
             Some(recipient_key.public_key_bytes()),

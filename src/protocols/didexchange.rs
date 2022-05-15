@@ -1,3 +1,4 @@
+// https://github.com/hyperledger/aries-rfcs/blob/main/features/0023-did-exchange/README.md
 use crate::connections::Connections;
 use crate::handler::{DidcommHandler, HandlerResponse};
 use did_key::KeyPair;
@@ -105,6 +106,12 @@ impl DidcommHandler for DidExchangeHandler {
         _connections: Option<&Connections>,
     ) -> HandlerResponse {
         if request
+            .get_didcomm_header()
+            .m_type
+            .eq("https://didcomm.org/didexchange/1.0/complete")
+        {
+            return HandlerResponse::Processed;
+        } else if request
             .get_didcomm_header()
             .m_type
             .starts_with("https://didcomm.org/didexchange/1.0")
