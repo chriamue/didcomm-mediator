@@ -36,7 +36,6 @@ impl DiscoverFeaturesResponseBuilder {
             .m_type("https://didcomm.org/discover-features/2.0/queries")
             .body(
                 &json!({"queries": [
-                    { "feature-type": "protocol", "match": "https://didcomm.org/tictactoe/1.*" },
                     { "feature-type": "goal-code", "match": "org.didcomm.*" }
                 ]})
                 .to_string(),
@@ -52,7 +51,19 @@ impl DiscoverFeaturesResponseBuilder {
                     "disclosures": [
                         {
                             "feature-type": "protocol",
-                            "id": "https://didcomm.org/trust-ping"
+                            "id": "https://didcomm.org/trust-ping/2.0"
+                        },
+                        {
+                            "feature-type": "protocol",
+                            "id": "https://didcomm.org/didexchange/1.0"
+                        },
+                        {
+                            "feature-type": "protocol",
+                            "id": "https://didcomm.org/messagepickup/1.0"
+                        },
+                        {
+                            "feature-type": "protocol",
+                            "id": "https://didcomm.org/routing/2.0/forward"
                         },
                     ]
                 })
