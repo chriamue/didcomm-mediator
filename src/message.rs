@@ -22,8 +22,6 @@ pub fn sign_and_encrypt_message(request: &Message, response: &Message, key: &Key
         )
         .kid(&hex::encode(sign_key.public_key_bytes()));
 
-    println!("{:?}", response);
-
     let ready_to_send = response
         .seal_signed(
             &key.private_key_bytes(),

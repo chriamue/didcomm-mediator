@@ -3,6 +3,7 @@ use didcomm_mediator::invitation::InvitationResponse;
 use didcomm_mediator::message::sign_and_encrypt_message;
 use didcomm_mediator::protocols::trustping::TrustPingResponseBuilder;
 use didcomm_rs::Message;
+use std::time::Instant;
 
 #[tokio::main]
 async fn main() {
@@ -24,7 +25,7 @@ async fn main() {
         .first()
         .unwrap();
 
-    println!("to: {}", did_to);
+    println!("PING {}", did_to);
 
     let did_doc = key.get_did_document(Default::default());
     let did_from = did_doc.id.to_string();
@@ -41,6 +42,8 @@ async fn main() {
 
     let request = sign_and_encrypt_message(&invitation, &request, &key);
 
+    let start = Instant::now();
+
     let client = reqwest::Client::new();
     let res = client
         .post("http://localhost:8000/didcomm")
@@ -52,6 +55,10 @@ async fn main() {
     let body = res.text().await.unwrap();
 
     let received = Message::receive(&body, Some(&key.private_key_bytes()), None, None).unwrap();
+
+    let duration = start.elapsed();
+
+    println!("time = {:?}", duration);
 
     println!("{}", serde_json::to_string_pretty(&received).unwrap());
 }
