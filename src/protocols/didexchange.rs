@@ -110,7 +110,7 @@ impl DidcommHandler for DidExchangeHandler {
             .m_type
             .eq("https://didcomm.org/didexchange/1.0/complete")
         {
-            return HandlerResponse::Processed;
+            HandlerResponse::Processed
         } else if request
             .get_didcomm_header()
             .m_type

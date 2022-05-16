@@ -14,12 +14,12 @@ pub fn sign_and_encrypt(message: &Message, did_to: &String, key: &KeyPair) -> Va
     let sign_key = generate::<Ed25519KeyPair>(None);
 
     let sender_did = key.get_did_document(Default::default()).id;
-    let recipient_key = did_key::resolve(&did_to).unwrap();
+    let recipient_key = did_key::resolve(did_to).unwrap();
 
     let response = message
         .clone()
         .from(&sender_did)
-        .to(&[&did_to])
+        .to(&[did_to])
         .as_jwe(
             &CryptoAlgorithm::XC20P,
             Some(recipient_key.public_key_bytes()),

@@ -1,3 +1,4 @@
+pub mod basicmessage;
 pub mod didexchange;
 pub mod discoverfeatures;
 pub mod forward;
