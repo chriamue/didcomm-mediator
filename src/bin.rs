@@ -14,7 +14,7 @@ use didcomm_mediator::protocols::messagepickup::MessagePickupHandler;
 use didcomm_mediator::protocols::trustping::TrustPingHandler;
 use didcomm_rs::Message;
 use rocket::fairing::{Fairing, Info, Kind};
-use rocket::http::Header;
+use rocket::http::{Header, Status};
 use rocket::{response::Redirect, serde::json::Json, State};
 use rocket::{Request, Response};
 use serde_json::Value;
@@ -63,6 +63,11 @@ fn did_web_endpoint(config: &State<Config>, key: &State<KeyPair>) -> Json<Value>
       }
     ]);
     Json(did_doc)
+}
+
+#[options("/didcomm")]
+fn didcomm_options() -> Status {
+    Status::Ok
 }
 
 #[post("/didcomm", format = "any", data = "<body>")]
@@ -154,6 +159,7 @@ fn rocket() -> _ {
             routes![
                 index,
                 invitation_endpoint,
+                didcomm_options,
                 didcomm_endpoint,
                 oob_invitation_endpoint,
                 did_web_endpoint
