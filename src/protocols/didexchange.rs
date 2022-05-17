@@ -6,6 +6,7 @@ use did_key::KeyPair;
 use did_key::{DIDCore, CONFIG_LD_PUBLIC};
 use didcomm_rs::Message;
 use serde_json::Value;
+use std::sync::{Arc, Mutex};
 
 #[derive(Default)]
 pub struct DidExchangeResponseBuilder {
@@ -104,7 +105,7 @@ impl DidcommHandler for DidExchangeHandler {
         &self,
         request: &Message,
         key: Option<&KeyPair>,
-        _connections: Option<&Connections>,
+        _connections: Option<&Arc<Mutex<Connections>>>,
     ) -> HandlerResponse {
         if request
             .get_didcomm_header()

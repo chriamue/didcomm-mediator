@@ -5,6 +5,7 @@ use crate::handler::{DidcommHandler, HandlerResponse};
 use did_key::KeyPair;
 use didcomm_rs::Message;
 use serde_json::json;
+use std::sync::{Arc, Mutex};
 
 #[derive(Default)]
 pub struct BasicMessageBuilder {
@@ -45,7 +46,7 @@ impl DidcommHandler for BasicMessageHandler {
         &self,
         request: &Message,
         _key: Option<&KeyPair>,
-        _connections: Option<&Connections>,
+        _connections: Option<&Arc<Mutex<Connections>>>,
     ) -> HandlerResponse {
         if request
             .get_didcomm_header()

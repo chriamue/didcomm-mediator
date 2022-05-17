@@ -3,7 +3,7 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::collections::VecDeque;
 
-#[derive(PartialEq, Deserialize)]
+#[derive(Debug, PartialEq, Deserialize)]
 pub enum ConnectionEndpoint {
     Internal,
     Http(String),
@@ -15,7 +15,7 @@ impl Default for ConnectionEndpoint {
     }
 }
 
-#[derive(Default, PartialEq, Deserialize)]
+#[derive(Debug, Default, PartialEq, Deserialize)]
 pub struct Connection {
     pub did: String,
     pub endpoint: ConnectionEndpoint,
@@ -32,7 +32,7 @@ impl Connection {
     }
 }
 
-#[derive(Default, PartialEq, Deserialize)]
+#[derive(Debug, Default, PartialEq, Deserialize)]
 pub struct Connections {
     pub connections: HashMap<String, Connection>,
 }

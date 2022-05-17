@@ -12,10 +12,10 @@ use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
 #[derive(Default)]
-pub struct MessagePickupResponseBuilder {
+pub struct MessagePickupResponseBuilder<'a> {
     did: Option<String>,
     message: Option<Message>,
-    connections: Option<Arc<Mutex<Connections>>>,
+    connections: Option<&'a Arc<Mutex<Connections>>>,
     batch_size: Option<u32>,
 }
 
@@ -68,7 +68,7 @@ impl Default for MessageBatch {
     }
 }
 
-impl MessagePickupResponseBuilder {
+impl<'a> MessagePickupResponseBuilder<'a> {
     pub fn new() -> Self {
         MessagePickupResponseBuilder {
             did: None,
@@ -93,7 +93,7 @@ impl MessagePickupResponseBuilder {
         self
     }
 
-    pub fn connections(&mut self, connections: Arc<Mutex<Connections>>) -> &mut Self {
+    pub fn connections(&mut self, connections: &'a Arc<Mutex<Connections>>) -> &mut Self {
         self.connections = Some(connections);
         self
     }
@@ -162,7 +162,16 @@ impl MessagePickupResponseBuilder {
         let batch: MessageBatch = match &self.connections {
             Some(connections) => {
                 let connections = connections.try_lock().unwrap();
-                let connection = connections.connections.get(self.did.as_ref().unwrap());
+                let did_from: String = self
+                    .message
+                    .as_ref()
+                    .unwrap()
+                    .get_didcomm_header()
+                    .from
+                    .clone()
+                    .unwrap();
+                let connection = connections.connections.get(&did_from);
+                println!("{:?}", connection);
                 match connection {
                     Some(connection) => {
                         let message_body = self.message.as_ref().unwrap().get_body().unwrap();
@@ -179,7 +188,9 @@ impl MessagePickupResponseBuilder {
                                 })
                             })
                             .collect();
-                        batch.messages_attach = attachment[0..batch_size as usize].to_vec();
+                        batch.messages_attach = attachment
+                            [0..batch_size.min(attachment.len() as u64) as usize]
+                            .to_vec();
                         batch
                     }
                     _ => MessageBatch::default(),
@@ -203,7 +214,7 @@ impl DidcommHandler for MessagePickupHandler {
         &self,
         request: &Message,
         key: Option<&KeyPair>,
-        _connections: Option<&Connections>,
+        connections: Option<&Arc<Mutex<Connections>>>,
     ) -> HandlerResponse {
         if request
             .get_didcomm_header()
@@ -214,6 +225,7 @@ impl DidcommHandler for MessagePickupHandler {
             let response = MessagePickupResponseBuilder::new()
                 .message(request.clone())
                 .did(did)
+                .connections(connections.unwrap())
                 .build()
                 .unwrap();
             let response = sign_and_encrypt_message(request, &response, key.unwrap());
@@ -261,7 +273,7 @@ mod tests {
         connections.insert_message(message);
 
         let response = MessagePickupResponseBuilder::new()
-            .connections(Arc::new(Mutex::new(connections)))
+            .connections(&Arc::new(Mutex::new(connections)))
             .message(request)
             .did("did:test".to_string())
             .build()
@@ -317,7 +329,7 @@ mod tests {
         connections.insert_message(message2);
 
         let response = MessagePickupResponseBuilder::new()
-            .connections(Arc::new(Mutex::new(connections)))
+            .connections(&Arc::new(Mutex::new(connections)))
             .message(request)
             .did("did:test".to_string())
             .build_batch()
@@ -349,7 +361,11 @@ mod tests {
             "https://didcomm.org/messagepickup/1.0/status-request"
         );
         let handler = MessagePickupHandler::default();
-        let response = handler.handle(&request, Some(&key), None);
+        let response = handler.handle(
+            &request,
+            Some(&key),
+            Some(&Arc::new(Mutex::new(Default::default()))),
+        );
         assert_ne!(response, HandlerResponse::Skipped);
     }
 }

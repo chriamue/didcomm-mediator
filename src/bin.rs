@@ -78,9 +78,7 @@ fn didcomm_endpoint(
     body: Json<Value>,
 ) -> Json<Value> {
     let body_str = serde_json::to_string(&body.into_inner()).unwrap();
-
-    #[cfg(test)]
-    println!("{}", body_str);
+    let connections: &Arc<Mutex<Connections>> = connections.clone();
 
     let received = Message::receive(&body_str, Some(&key.private_key_bytes()), None, None).unwrap();
 
@@ -93,8 +91,7 @@ fn didcomm_endpoint(
 
     let mut response: Value = serde_json::json!({});
     for handler in handlers {
-        let mut connection_locked = connections.try_lock().unwrap();
-        match handler.handle(&received, Some(key), Some(&connection_locked)) {
+        match handler.handle(&received, Some(key), Some(connections).clone()) {
             HandlerResponse::Skipped => {}
             HandlerResponse::Processed => {}
             HandlerResponse::Forward(receivers, message) => {
@@ -104,7 +101,8 @@ fn didcomm_endpoint(
                         .message(serde_json::to_string(&message).unwrap())
                         .build()
                         .unwrap();
-                    connection_locked.insert_message(forward);
+                    let mut locked_connections = connections.try_lock().unwrap();
+                    locked_connections.insert_message(forward);
                 }
             }
             HandlerResponse::Response(product) => {
@@ -113,7 +111,6 @@ fn didcomm_endpoint(
             }
         }
     }
-
     Json(response)
 }
 
@@ -185,6 +182,7 @@ mod main_tests {
     use did_key::Ed25519KeyPair;
     use didcomm_mediator::message::sign_and_encrypt;
     use didcomm_mediator::protocols::didexchange::DidExchangeResponseBuilder;
+    use didcomm_mediator::protocols::messagepickup::MessagePickupResponseBuilder;
     use didcomm_mediator::protocols::trustping::TrustPingResponseBuilder;
     use didcomm_rs::crypto::{CryptoAlgorithm, SignatureAlgorithm};
     use rocket::http::{ContentType, Status};
@@ -345,5 +343,27 @@ mod main_tests {
         let req = req.body(serde_json::to_string(&request).unwrap());
         let response = req.dispatch();
         assert_eq!(response.status(), Status::Ok);
+
+        let request = MessagePickupResponseBuilder::new()
+            .did(did_from.to_string())
+            .batch_size(10)
+            .build_batch_pickup()
+            .unwrap();
+        let request = sign_and_encrypt(&request, &recipient_did, &key);
+
+        let mut req = client.post("/didcomm");
+        req.add_header(ContentType::JSON);
+        let req = req.body(serde_json::to_string(&request).unwrap());
+        let response = req.dispatch();
+        assert_eq!(response.status(), Status::Ok);
+
+        let response_json = response.into_string().unwrap();
+
+        let received = Message::receive(&response_json, Some(&key.private_key_bytes()), None, None);
+
+        assert!(&received.is_ok());
+        let message: Message = received.unwrap();
+        println!("message {:?}", message);
+        assert!(message.get_attachments().next().is_some());
     }
 }
