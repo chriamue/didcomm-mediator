@@ -7,6 +7,7 @@ use serde_json::Value;
 pub enum HandlerResponse {
     Skipped,
     Processed,
+    Forward((Vec<String>, Value)),
     Response(Value),
 }
 

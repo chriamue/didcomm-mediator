@@ -10,6 +10,7 @@ use didcomm_mediator::handler::{DidcommHandler, HandlerResponse};
 use didcomm_mediator::invitation::{Invitation, InvitationResponse};
 use didcomm_mediator::protocols::didexchange::DidExchangeHandler;
 use didcomm_mediator::protocols::discoverfeatures::DiscoverFeaturesHandler;
+use didcomm_mediator::protocols::forward::ForwardBuilder;
 use didcomm_mediator::protocols::messagepickup::MessagePickupHandler;
 use didcomm_mediator::protocols::trustping::TrustPingHandler;
 use didcomm_rs::Message;
@@ -92,11 +93,18 @@ fn didcomm_endpoint(
 
     let mut response: Value = serde_json::json!({});
     for handler in handlers {
-        let connection_locked = connections.try_lock().unwrap();
+        let connection_locked: Connections = connections.try_lock().unwrap();
         match handler.handle(&received, Some(key), Some(&connection_locked)) {
             HandlerResponse::Skipped => {}
-            HandlerResponse::Processed => {
-                break;
+            HandlerResponse::Processed((receivers, message)) => {
+                for receiver in receivers {
+                    let forward = ForwardBuilder::new()
+                        .did(receiver)
+                        .message(message)
+                        .build()
+                        .unwrap();
+                    connection_locked.insert_message(forward);
+                }
             }
             HandlerResponse::Response(product) => {
                 response = product;

@@ -3,16 +3,30 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::collections::VecDeque;
 
+#[derive(PartialEq, Deserialize)]
+pub enum ConnectionEndpoint {
+    Internal,
+    Http(String),
+}
+
+impl Default for ConnectionEndpoint {
+    fn default() -> Self {
+        ConnectionEndpoint::Internal
+    }
+}
+
 #[derive(Default, PartialEq, Deserialize)]
 pub struct Connection {
     pub did: String,
+    pub endpoint: ConnectionEndpoint,
     pub messages: VecDeque<Message>,
 }
 
 impl Connection {
-    pub fn new(did: String) -> Self {
+    pub fn new(did: String, endpoint: ConnectionEndpoint) -> Self {
         Connection {
             did,
+            endpoint,
             messages: VecDeque::default(),
         }
     }
@@ -36,7 +50,7 @@ impl Connections {
                     connection.messages.push_back(message.clone());
                 }
                 None => {
-                    let mut connection = Connection::new(did.to_string());
+                    let mut connection = Connection::new(did.to_string(), Default::default());
                     connection.messages.push_back(message.clone());
                     self.connections.insert(did.to_string(), connection);
                 }

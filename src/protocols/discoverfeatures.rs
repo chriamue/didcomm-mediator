@@ -2,6 +2,7 @@
 
 use crate::connections::Connections;
 use crate::handler::{DidcommHandler, HandlerResponse};
+use crate::message::sign_and_encrypt_message;
 use did_key::KeyPair;
 use didcomm_rs::Message;
 use serde_json::json;
@@ -79,7 +80,7 @@ impl DidcommHandler for DiscoverFeaturesHandler {
     fn handle(
         &self,
         request: &Message,
-        _key: Option<&KeyPair>,
+        key: Option<&KeyPair>,
         _connections: Option<&Connections>,
     ) -> HandlerResponse {
         if request
@@ -91,6 +92,8 @@ impl DidcommHandler for DiscoverFeaturesHandler {
                 .message(request.clone())
                 .build()
                 .unwrap();
+            let response = sign_and_encrypt_message(request, &response, key.unwrap());
+
             HandlerResponse::Response(serde_json::to_value(&response).unwrap())
         } else {
             HandlerResponse::Skipped
@@ -101,6 +104,7 @@ impl DidcommHandler for DiscoverFeaturesHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use did_key::{generate, DIDCore, X25519KeyPair};
 
     #[test]
     fn test_build_query() {
@@ -138,14 +142,20 @@ mod tests {
 
     #[test]
     fn test_handler() {
-        let ping = DiscoverFeaturesResponseBuilder::new().build().unwrap();
+        let key = generate::<X25519KeyPair>(None);
+        let key_from = generate::<X25519KeyPair>(None);
+        let did_from = key_from.get_did_document(Default::default()).id;
+        let request = DiscoverFeaturesResponseBuilder::new()
+            .build()
+            .unwrap()
+            .from(&did_from);
 
         assert_eq!(
-            ping.get_didcomm_header().m_type,
+            request.get_didcomm_header().m_type,
             "https://didcomm.org/discover-features/2.0/queries"
         );
         let handler = DiscoverFeaturesHandler::default();
-        let response = handler.handle(&ping, None, None);
+        let response = handler.handle(&request, Some(&key), None);
         assert_ne!(response, HandlerResponse::Skipped);
     }
 }
