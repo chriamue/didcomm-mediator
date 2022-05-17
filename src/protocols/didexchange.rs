@@ -1,6 +1,7 @@
 // https://github.com/hyperledger/aries-rfcs/blob/main/features/0023-did-exchange/README.md
 use crate::connections::Connections;
 use crate::handler::{DidcommHandler, HandlerResponse};
+use crate::message::sign_and_encrypt_message;
 use did_key::KeyPair;
 use did_key::{DIDCore, CONFIG_LD_PUBLIC};
 use didcomm_rs::Message;
@@ -119,13 +120,16 @@ impl DidcommHandler for DidExchangeHandler {
             let did = key.unwrap().get_did_document(CONFIG_LD_PUBLIC).id;
             let mut did_doc = key.unwrap().get_did_document(CONFIG_LD_PUBLIC);
             did_doc.verification_method[0].private_key = None;
+            let did_to = request.get_didcomm_header().from.clone().unwrap();
             let response = DidExchangeResponseBuilder::new()
                 .message(request.clone())
                 .did(did)
                 .did_doc(serde_json::to_value(&did_doc).unwrap())
                 .build()
                 .unwrap();
-            HandlerResponse::Response(serde_json::to_value(&response).unwrap())
+            let response = sign_and_encrypt_message(request, &response, key.unwrap());
+
+            HandlerResponse::Forward(vec![did_to], serde_json::to_value(&response).unwrap())
         } else {
             HandlerResponse::Skipped
         }
@@ -285,6 +289,8 @@ mod tests {
     #[test]
     fn test_handler() {
         let key = generate::<X25519KeyPair>(None);
+        let key_to = generate::<X25519KeyPair>(None);
+        let did_to = key_to.get_did_document(Default::default()).id;
         let invitation = Invitation::new(
             "did:key:peer".to_string(),
             "Alice".to_string(),
@@ -297,10 +303,11 @@ mod tests {
             .thid(&invitation.id);
         let request = DidExchangeResponseBuilder::new()
             .message(invitation)
-            .did("did:key:z6MkpFZ86WuUpihn1mTRbpBCGE6YpCvsBYtZQYnd9jcuAUup".to_string())
+            .did(did_to.to_string())
             .did_doc(did_doc)
             .build()
-            .unwrap();
+            .unwrap()
+            .from(&did_to);
 
         assert_eq!(
             request.get_didcomm_header().m_type,

@@ -93,14 +93,15 @@ fn didcomm_endpoint(
 
     let mut response: Value = serde_json::json!({});
     for handler in handlers {
-        let connection_locked: Connections = connections.try_lock().unwrap();
+        let mut connection_locked = connections.try_lock().unwrap();
         match handler.handle(&received, Some(key), Some(&connection_locked)) {
             HandlerResponse::Skipped => {}
-            HandlerResponse::Processed((receivers, message)) => {
+            HandlerResponse::Processed => {}
+            HandlerResponse::Forward(receivers, message) => {
                 for receiver in receivers {
                     let forward = ForwardBuilder::new()
                         .did(receiver)
-                        .message(message)
+                        .message(serde_json::to_string(&message).unwrap())
                         .build()
                         .unwrap();
                     connection_locked.insert_message(forward);
@@ -182,6 +183,8 @@ fn rocket() -> _ {
 mod main_tests {
     use super::*;
     use did_key::Ed25519KeyPair;
+    use didcomm_mediator::message::sign_and_encrypt;
+    use didcomm_mediator::protocols::didexchange::DidExchangeResponseBuilder;
     use didcomm_mediator::protocols::trustping::TrustPingResponseBuilder;
     use didcomm_rs::crypto::{CryptoAlgorithm, SignatureAlgorithm};
     use rocket::http::{ContentType, Status};
@@ -306,5 +309,41 @@ mod main_tests {
         let received = Message::receive(&response_json, Some(&key.private_key_bytes()), None, None);
 
         assert!(&received.is_ok());
+    }
+
+    #[test]
+    fn test_did_exchange() {
+        let rocket = rocket();
+        let client = Client::tracked(rocket).unwrap();
+        let req = client.get("/invitation");
+        let response = req.dispatch();
+        assert_eq!(response.status(), Status::Ok);
+        let invitation_response: InvitationResponse = response.into_json().unwrap();
+        let invitation = invitation_response.invitation;
+        let recipient_did = invitation.services[0].recipient_keys[0].to_string();
+
+        let key = generate::<X25519KeyPair>(None);
+        let did_doc = key.get_did_document(CONFIG_JOSE_PUBLIC);
+        let did_from = did_doc.id.to_string();
+
+        let invitation = Message::new()
+            .m_type("https://didcomm.org/out-of-band/1.0/invitation")
+            .thid(&invitation.id)
+            .from(&recipient_did);
+        let request = DidExchangeResponseBuilder::new()
+            .message(invitation.clone())
+            .did(recipient_did.to_string())
+            .did_doc(serde_json::to_value(&did_doc).unwrap())
+            .build()
+            .unwrap()
+            .from(&did_from);
+
+        let request = sign_and_encrypt(&request, &recipient_did, &key);
+
+        let mut req = client.post("/didcomm");
+        req.add_header(ContentType::JSON);
+        let req = req.body(serde_json::to_string(&request).unwrap());
+        let response = req.dispatch();
+        assert_eq!(response.status(), Status::Ok);
     }
 }
