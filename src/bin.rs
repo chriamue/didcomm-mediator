@@ -89,7 +89,6 @@ fn didcomm_endpoint(
         Box::new(MessagePickupHandler::default()),
     ];
 
-    let mut response: Value = serde_json::json!({});
     for handler in handlers {
         match handler.handle(&received, Some(key), Some(connections).clone()) {
             HandlerResponse::Skipped => {}
@@ -106,12 +105,11 @@ fn didcomm_endpoint(
                 }
             }
             HandlerResponse::Response(product) => {
-                response = product;
-                break;
+                return Json(product)
             }
         }
     }
-    Json(response)
+    Json(serde_json::json!({}))
 }
 
 pub struct CORS;
@@ -361,7 +359,7 @@ mod main_tests {
 
         let received = Message::receive(&response_json, Some(&key.private_key_bytes()), None, None);
 
-        assert!(&received.is_ok());
+        //assert!(&received.is_ok());
         let message: Message = received.unwrap();
         println!("message {:?}", message);
         assert!(message.get_attachments().next().is_some());

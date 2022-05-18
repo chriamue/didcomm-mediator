@@ -5,9 +5,9 @@ use crate::message::sign_and_encrypt_message;
 use chrono::{DateTime, Utc};
 use did_key::KeyPair;
 use did_key::{DIDCore, CONFIG_LD_PUBLIC};
-use didcomm_rs::Message;
+use didcomm_rs::{AttachmentBuilder, AttachmentDataBuilder, Message};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
@@ -110,16 +110,7 @@ impl<'a> MessagePickupResponseBuilder<'a> {
     }
 
     pub fn build_status_request(&mut self) -> Result<Message, &'static str> {
-        let id = Uuid::new_v4();
-        Ok(Message::new()
-            .m_type("https://didcomm.org/messagepickup/1.0/status-request")
-            .body(
-                &json!({
-                    "@id": id,
-                    "@type": "https://didcomm.org/messagepickup/1.0/status-request"
-                })
-                .to_string(),
-            ))
+        Ok(Message::new().m_type("https://didcomm.org/messagepickup/1.0/status-request"))
     }
 
     fn build_status(&mut self) -> Result<Message, &'static str> {
@@ -145,21 +136,16 @@ impl<'a> MessagePickupResponseBuilder<'a> {
     }
 
     pub fn build_batch_pickup(&mut self) -> Result<Message, &'static str> {
-        let id = Uuid::new_v4();
         Ok(Message::new()
             .m_type("https://didcomm.org/messagepickup/1.0/batch-pickup")
-            .body(
-                &json!({
-                    "@id": id,
-                    "@type": "https://didcomm.org/messagepickup/1.0/batch-pickup",
-                    "batch_size": self.batch_size.unwrap()
-                })
-                .to_string(),
+            .add_header_field(
+                "batch_size".to_string(),
+                format!("{}", self.batch_size.unwrap()),
             ))
     }
 
     fn build_batch(&mut self) -> Result<Message, &'static str> {
-        let batch: MessageBatch = match &self.connections {
+        let batch: Message = match &self.connections {
             Some(connections) => {
                 let connections = connections.try_lock().unwrap();
                 let did_from: String = self
@@ -171,38 +157,47 @@ impl<'a> MessagePickupResponseBuilder<'a> {
                     .clone()
                     .unwrap();
                 let connection = connections.connections.get(&did_from);
-                println!("{:?}", connection);
                 match connection {
                     Some(connection) => {
-                        let message_body = self.message.as_ref().unwrap().get_body().unwrap();
-                        let message_body: Value = serde_json::from_str(&message_body).unwrap();
-                        let batch_size = message_body["batch_size"].as_u64().unwrap();
-                        let mut batch = MessageBatch::default();
-                        let attachment: Vec<Value> = connection
-                            .messages
-                            .clone()
-                            .into_iter()
-                            .map(|message| {
-                                json!({
-                                    "@id": Uuid::new_v4(), "message": message
+                        let (_, batch_size) = self
+                            .message
+                            .as_ref()
+                            .unwrap()
+                            .get_application_params()
+                            .filter(|(key, _)| *key == "batch_size")
+                            .next()
+                            .unwrap();
+                        let batch_size = batch_size.clone().parse::<u64>().unwrap();
+                        let messages: Vec<Message> =
+                            connection.messages.clone().into_iter().collect();
+                        let messages =
+                            messages[0..batch_size.min(messages.len() as u64) as usize].to_vec();
+                        let attachments: Vec<AttachmentBuilder> =
+                            messages
+                                .into_iter()
+                                .map(|message| {
+                                    AttachmentBuilder::new(true)
+                                        .with_id(&Uuid::new_v4().to_string())
+                                        .with_data(AttachmentDataBuilder::new().with_raw_payload(
+                                            serde_json::to_string(&message).unwrap(),
+                                        ))
                                 })
-                            })
-                            .collect();
-                        batch.messages_attach = attachment
-                            [0..batch_size.min(attachment.len() as u64) as usize]
-                            .to_vec();
-                        batch
+                                .collect();
+                        let mut message = Message::new();
+                        for attachment in attachments {
+                            message.append_attachment(attachment);
+                        }
+                        message
                     }
-                    _ => MessageBatch::default(),
+                    _ => Message::new(),
                 }
             }
-            None => MessageBatch::default(),
+            None => Message::new(),
         };
 
-        Ok(Message::new()
+        Ok(batch
             .m_type("https://didcomm.org/messagepickup/1.0/batch")
-            .thid(&self.message.as_ref().unwrap().get_didcomm_header().id)
-            .body(&serde_json::to_string(&batch).unwrap()))
+            .thid(&self.message.as_ref().unwrap().get_didcomm_header().id))
     }
 }
 
@@ -302,9 +297,12 @@ mod tests {
             response.get_didcomm_header().m_type,
             "https://didcomm.org/messagepickup/1.0/batch-pickup"
         );
-        let response_body = response.get_body().unwrap();
-        let body: serde_json::Value = serde_json::from_str(&response_body).unwrap();
-        assert_eq!(body["batch_size"].as_u64().unwrap(), 10u64);
+        let (_, batch_size) = response
+            .get_application_params()
+            .filter(|(key, _)| *key == "batch_size")
+            .next()
+            .unwrap();
+        assert_eq!(batch_size, "10");
         println!("{}", serde_json::to_string_pretty(&response).unwrap());
     }
 
@@ -339,10 +337,8 @@ mod tests {
             response.get_didcomm_header().m_type,
             "https://didcomm.org/messagepickup/1.0/batch"
         );
-        let response_body = response.get_body().unwrap();
-        assert_ne!(response_body, "{}");
-        let batch: MessageBatch = serde_json::from_str(&response_body).unwrap();
-        assert_eq!(batch.messages_attach.len(), 1);
+
+        assert!(response.get_attachments().next().is_some());
 
         println!("{}", serde_json::to_string_pretty(&response).unwrap());
     }
