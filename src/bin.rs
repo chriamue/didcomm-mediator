@@ -78,7 +78,7 @@ fn didcomm_endpoint(
     body: Json<Value>,
 ) -> Json<Value> {
     let body_str = serde_json::to_string(&body.into_inner()).unwrap();
-    let connections: &Arc<Mutex<Connections>> = connections.clone();
+    let connections: &Arc<Mutex<Connections>> = connections;
 
     let received = Message::receive(&body_str, Some(&key.private_key_bytes()), None, None).unwrap();
 
@@ -90,7 +90,7 @@ fn didcomm_endpoint(
     ];
 
     for handler in handlers {
-        match handler.handle(&received, Some(key), Some(connections).clone()) {
+        match handler.handle(&received, Some(key), Some(connections)) {
             HandlerResponse::Skipped => {}
             HandlerResponse::Processed => {}
             HandlerResponse::Forward(receivers, message) => {
@@ -104,9 +104,7 @@ fn didcomm_endpoint(
                     locked_connections.insert_message(forward);
                 }
             }
-            HandlerResponse::Response(product) => {
-                return Json(product)
-            }
+            HandlerResponse::Response(product) => return Json(product),
         }
     }
     Json(serde_json::json!({}))
@@ -148,7 +146,7 @@ fn rocket() -> _ {
         }
     };
     let did_doc = key.get_did_document(CONFIG_JOSE_PUBLIC);
-    let did = did_doc.id.to_string();
+    let did = did_doc.id;
 
     println!("{}", did);
 

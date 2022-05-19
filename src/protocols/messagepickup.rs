@@ -2,12 +2,9 @@
 use crate::connections::Connections;
 use crate::handler::{DidcommHandler, HandlerResponse};
 use crate::message::sign_and_encrypt_message;
-use chrono::{DateTime, Utc};
 use did_key::KeyPair;
 use did_key::{DIDCore, CONFIG_LD_PUBLIC};
 use didcomm_rs::{AttachmentBuilder, AttachmentDataBuilder, Message};
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
@@ -17,55 +14,6 @@ pub struct MessagePickupResponseBuilder<'a> {
     message: Option<Message>,
     connections: Option<&'a Arc<Mutex<Connections>>>,
     batch_size: Option<u32>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub struct MessagePickupStatus {
-    #[serde(rename = "@id")]
-    pub id: String,
-    #[serde(rename = "@type")]
-    pub m_type: String,
-    pub message_count: u32,
-    pub duration_waited: u32,
-    pub last_added_time: DateTime<Utc>,
-    pub last_delivered_time: DateTime<Utc>,
-    pub last_removed_time: DateTime<Utc>,
-    pub total_size: u32,
-}
-
-impl Default for MessagePickupStatus {
-    fn default() -> Self {
-        MessagePickupStatus {
-            id: Uuid::new_v4().to_string(),
-            m_type: "https://didcomm.org/messagepickup/1.0/status".to_string(),
-            message_count: 0,
-            duration_waited: 0,
-            last_added_time: Utc::now(),
-            last_delivered_time: Utc::now(),
-            last_removed_time: Utc::now(),
-            total_size: 0,
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub struct MessageBatch {
-    #[serde(rename = "@id")]
-    pub id: String,
-    #[serde(rename = "@type")]
-    pub m_type: String,
-    #[serde(rename = "messages~attach")]
-    pub messages_attach: Vec<Value>,
-}
-
-impl Default for MessageBatch {
-    fn default() -> Self {
-        MessageBatch {
-            id: Uuid::new_v4().to_string(),
-            m_type: "https://didcomm.org/messagepickup/1.0/batch".to_string(),
-            messages_attach: Vec::new(),
-        }
-    }
 }
 
 impl<'a> MessagePickupResponseBuilder<'a> {
@@ -114,25 +62,24 @@ impl<'a> MessagePickupResponseBuilder<'a> {
     }
 
     fn build_status(&mut self) -> Result<Message, &'static str> {
-        let status: MessagePickupStatus = match &self.connections {
+        let message: Message = match &self.connections {
             Some(connections) => {
                 let connections = connections.try_lock().unwrap();
                 let connection = connections.connections.get(self.did.as_ref().unwrap());
                 match connection {
-                    Some(connection) => MessagePickupStatus {
-                        message_count: connection.messages.len() as u32,
-                        ..Default::default()
-                    },
-                    _ => MessagePickupStatus::default(),
+                    Some(connection) => Message::new().add_header_field(
+                        "message_count".to_string(),
+                        format!("{}", connection.messages.len()),
+                    ),
+                    _ => Message::new(),
                 }
             }
-            None => MessagePickupStatus::default(),
+            None => Message::new(),
         };
 
-        Ok(Message::new()
+        Ok(message
             .m_type("https://didcomm.org/messagepickup/1.0/status")
-            .thid(&self.message.as_ref().unwrap().get_didcomm_header().id)
-            .body(&serde_json::to_string(&status).unwrap()))
+            .thid(&self.message.as_ref().unwrap().get_didcomm_header().id))
     }
 
     pub fn build_batch_pickup(&mut self) -> Result<Message, &'static str> {
@@ -164,25 +111,25 @@ impl<'a> MessagePickupResponseBuilder<'a> {
                             .as_ref()
                             .unwrap()
                             .get_application_params()
-                            .filter(|(key, _)| *key == "batch_size")
-                            .next()
+                            .find(|(key, _)| *key == "batch_size")
                             .unwrap();
                         let batch_size = batch_size.clone().parse::<u64>().unwrap();
                         let messages: Vec<Message> =
                             connection.messages.clone().into_iter().collect();
                         let messages =
                             messages[0..batch_size.min(messages.len() as u64) as usize].to_vec();
-                        let attachments: Vec<AttachmentBuilder> =
-                            messages
-                                .into_iter()
-                                .map(|message| {
-                                    AttachmentBuilder::new(true)
-                                        .with_id(&Uuid::new_v4().to_string())
-                                        .with_data(AttachmentDataBuilder::new().with_raw_payload(
-                                            serde_json::to_string(&message).unwrap(),
-                                        ))
-                                })
-                                .collect();
+                        let attachments: Vec<AttachmentBuilder> = messages
+                            .into_iter()
+                            .map(|message| {
+                                AttachmentBuilder::new(true)
+                                    .with_id(&Uuid::new_v4().to_string())
+                                    .with_data(
+                                        AttachmentDataBuilder::new()
+                                            .with_link("")
+                                            .with_json(&serde_json::to_string(&message).unwrap()),
+                                    )
+                            })
+                            .collect();
                         let mut message = Message::new();
                         for attachment in attachments {
                             message.append_attachment(attachment);
@@ -278,12 +225,12 @@ mod tests {
             response.get_didcomm_header().m_type,
             "https://didcomm.org/messagepickup/1.0/status"
         );
-        let response_body = response.get_body().unwrap();
-        assert_ne!(response_body, "{}");
-        let status: MessagePickupStatus = serde_json::from_str(&response_body).unwrap();
-        assert_eq!(status.message_count, 1);
-
-        println!("{}", serde_json::to_string_pretty(&response).unwrap());
+        let (_, message_count) = response
+            .get_application_params()
+            .filter(|(key, _)| *key == "message_count")
+            .next()
+            .unwrap();
+        assert_eq!(message_count, "1");
     }
 
     #[test]
