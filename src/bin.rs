@@ -302,11 +302,33 @@ mod main_tests {
         let req = req.body(ready_to_send);
         let response = req.dispatch();
         assert_eq!(response.status(), Status::Ok);
+
+        let request = MessagePickupResponseBuilder::new()
+            .did(did_from.to_string())
+            .batch_size(10)
+            .build_batch_pickup()
+            .unwrap();
+        let request = sign_and_encrypt(&request, &recipient_did, &key);
+
+        let mut req = client.post("/didcomm");
+        req.add_header(ContentType::JSON);
+        let req = req.body(serde_json::to_string(&request).unwrap());
+        let response = req.dispatch();
+        assert_eq!(response.status(), Status::Ok);
+
         let response_json = response.into_string().unwrap();
-        println!("response {}", response_json);
         let received = Message::receive(&response_json, Some(&key.private_key_bytes()), None, None);
 
         assert!(&received.is_ok());
+        let message: Message = received.unwrap();
+
+        for attachment in message.get_attachments() {
+            let response_json = attachment.data.json.as_ref().unwrap();
+            let received =
+                Message::receive(&response_json, Some(&key.private_key_bytes()), None, None);
+            println!("message {:?}", received);
+        }
+        assert!(message.get_attachments().next().is_some());
     }
 
     #[test]
