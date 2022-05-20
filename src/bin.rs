@@ -104,6 +104,10 @@ fn didcomm_endpoint(
                     locked_connections.insert_message(forward);
                 }
             }
+            HandlerResponse::Send(message) => {
+                let mut locked_connections = connections.try_lock().unwrap();
+                locked_connections.insert_message(*message);
+            }
             HandlerResponse::Response(product) => return Json(product),
         }
     }
@@ -354,12 +358,17 @@ mod main_tests {
         assert_eq!(response.status(), Status::Ok);
 
         let response_json = response.into_string().unwrap();
-
         let received = Message::receive(&response_json, Some(&key.private_key_bytes()), None, None);
 
-        //assert!(&received.is_ok());
+        assert!(&received.is_ok());
         let message: Message = received.unwrap();
-        println!("message {:?}", message);
+
+        for attachment in message.get_attachments() {
+            let response_json = attachment.data.json.as_ref().unwrap();
+            let received =
+                Message::receive(&response_json, Some(&key.private_key_bytes()), None, None);
+            println!("message {:?}", received);
+        }
         assert!(message.get_attachments().next().is_some());
     }
 }

@@ -125,7 +125,7 @@ impl<'a> MessagePickupResponseBuilder<'a> {
                                     .with_id(&Uuid::new_v4().to_string())
                                     .with_data(
                                         AttachmentDataBuilder::new()
-                                            .with_link("")
+                                            .with_link("no")
                                             .with_json(&serde_json::to_string(&message).unwrap()),
                                     )
                             })

@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 pub enum HandlerResponse {
     Skipped,
     Processed,
+    Send(Box<Message>),
     Forward(Vec<String>, Value),
     Response(Value),
 }

@@ -1,7 +1,6 @@
 // https://github.com/hyperledger/aries-rfcs/blob/main/features/0023-did-exchange/README.md
 use crate::connections::Connections;
 use crate::handler::{DidcommHandler, HandlerResponse};
-use crate::message::sign_and_encrypt_message;
 use did_key::KeyPair;
 use did_key::{DIDCore, CONFIG_LD_PUBLIC};
 use didcomm_rs::Message;
@@ -127,10 +126,9 @@ impl DidcommHandler for DidExchangeHandler {
                 .did(did)
                 .did_doc(serde_json::to_value(&did_doc).unwrap())
                 .build()
-                .unwrap();
-            let response = sign_and_encrypt_message(request, &response, key.unwrap());
-
-            HandlerResponse::Forward(vec![did_to], serde_json::to_value(&response).unwrap())
+                .unwrap()
+                .to(&[&did_to]);
+            HandlerResponse::Send(Box::new(response))
         } else {
             HandlerResponse::Skipped
         }

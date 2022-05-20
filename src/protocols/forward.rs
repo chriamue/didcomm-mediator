@@ -32,11 +32,11 @@ impl ForwardBuilder {
             .body(&json!({"next": self.did.as_ref().unwrap()}).to_string())
             .to(&[self.did.as_ref().unwrap()]);
         message.append_attachment(
-            AttachmentBuilder::new(true)
-                .with_id("best attachment")
-                .with_data(
-                    AttachmentDataBuilder::new().with_raw_payload(self.message.as_ref().unwrap()),
-                ),
+            AttachmentBuilder::new(true).with_data(
+                AttachmentDataBuilder::new()
+                    .with_link("")
+                    .with_json(self.message.as_ref().unwrap()),
+            ),
         );
         Ok(message)
     }
