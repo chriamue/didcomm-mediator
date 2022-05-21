@@ -3,7 +3,7 @@ WORKDIR /usr/src/
 
 RUN USER=root cargo new --lib didcomm_mediator
 WORKDIR /usr/src/didcomm_mediator
-COPY Cargo.toml Cargo.lock ./
+COPY Cargo.toml ./
 RUN echo "fn main() {}" > src/bin.rs
 RUN mkdir examples
 RUN touch examples/didexchange.rs
