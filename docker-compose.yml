@@ -1,0 +1,11 @@
+version: "3.2"
+services:
+  provider:
+    # image: ghcr.io/chriamue/didcomm-mediator/didcomm-mediator:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ./Rocket.toml:/Rocket.toml
+    ports:
+     - "8000:8000"

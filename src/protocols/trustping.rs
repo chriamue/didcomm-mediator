@@ -76,9 +76,6 @@ impl DidcommHandler for TrustPingHandler {
                 .build()
                 .unwrap()
                 .to(&[&request.get_didcomm_header().from.as_ref().unwrap()]);
-            //let response = sign_and_encrypt_message(request, &response, key.unwrap());
-
-            //HandlerResponse::Response(serde_json::to_value(&response).unwrap())
             HandlerResponse::Send(Box::new(response))
         } else {
             HandlerResponse::Skipped
