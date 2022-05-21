@@ -8,4 +8,4 @@ services:
     volumes:
       - ./Rocket.toml:/Rocket.toml
     ports:
-     - "8000:8000"
+     - "8080:8080"
