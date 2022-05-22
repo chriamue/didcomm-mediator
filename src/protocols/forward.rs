@@ -29,8 +29,7 @@ impl ForwardBuilder {
     pub fn build(&mut self) -> Result<Message, &'static str> {
         let mut message = Message::new()
             .m_type("https://didcomm.org/routing/2.0/forward")
-            .body(&json!({"next": self.did.as_ref().unwrap()}).to_string())
-            .to(&[self.did.as_ref().unwrap()]);
+            .body(&json!({"next": self.did.as_ref().unwrap()}).to_string());
         message.append_attachment(
             AttachmentBuilder::new(true).with_data(
                 AttachmentDataBuilder::new()
