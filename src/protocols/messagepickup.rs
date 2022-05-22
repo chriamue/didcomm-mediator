@@ -94,7 +94,7 @@ impl<'a> MessagePickupResponseBuilder<'a> {
     fn build_batch(&mut self) -> Result<Message, &'static str> {
         let batch: Message = match &self.connections {
             Some(connections) => {
-                let connections = connections.try_lock().unwrap();
+                let mut connections = connections.try_lock().unwrap();
                 let did_from: String = self
                     .message
                     .as_ref()
@@ -103,7 +103,7 @@ impl<'a> MessagePickupResponseBuilder<'a> {
                     .from
                     .clone()
                     .unwrap();
-                let connection = connections.connections.get(&did_from);
+                let connection = connections.connections.get_mut(&did_from);
                 match connection {
                     Some(connection) => {
                         let (_, batch_size) = self
@@ -113,11 +113,11 @@ impl<'a> MessagePickupResponseBuilder<'a> {
                             .get_application_params()
                             .find(|(key, _)| *key == "batch_size")
                             .unwrap();
-                        let batch_size = batch_size.clone().parse::<u64>().unwrap();
-                        let messages: Vec<Message> =
-                            connection.messages.clone().into_iter().collect();
-                        let messages =
-                            messages[0..batch_size.min(messages.len() as u64) as usize].to_vec();
+                        let batch_size = batch_size.clone().parse::<usize>().unwrap();
+                        let messages: Vec<Message> = connection
+                            .messages
+                            .drain(0..batch_size.min(connection.messages.len()))
+                            .collect::<Vec<_>>();
                         let attachments: Vec<AttachmentBuilder> = messages
                             .into_iter()
                             .map(|message| {
