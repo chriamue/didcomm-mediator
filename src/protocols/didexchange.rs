@@ -46,7 +46,7 @@ impl DidExchangeResponseBuilder {
         }
     }
 
-    fn build_request(&mut self) -> Result<Message, &'static str> {
+    pub fn build_request(&mut self) -> Result<Message, &'static str> {
         let thid = self
             .message
             .as_ref()
@@ -67,7 +67,7 @@ impl DidExchangeResponseBuilder {
             ))
     }
 
-    fn build_response(&mut self) -> Result<Message, &'static str> {
+    pub fn build_response(&mut self) -> Result<Message, &'static str> {
         Ok(Message::new()
             .m_type("https://didcomm.org/didexchange/1.0/response")
             .thid(&self.message.as_ref().unwrap().get_didcomm_header().id)
@@ -79,7 +79,7 @@ impl DidExchangeResponseBuilder {
             ))
     }
 
-    fn build_complete(&mut self) -> Result<Message, &'static str> {
+    pub fn build_complete(&mut self) -> Result<Message, &'static str> {
         Ok(Message::new()
             .m_type("https://didcomm.org/didexchange/1.0/complete")
             .thid(

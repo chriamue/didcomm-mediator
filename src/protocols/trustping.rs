@@ -41,13 +41,13 @@ impl TrustPingResponseBuilder {
         }
     }
 
-    fn build_ping(&mut self) -> Result<Message, &'static str> {
+    pub fn build_ping(&mut self) -> Result<Message, &'static str> {
         Ok(Message::new()
             .m_type("https://didcomm.org/trust-ping/2.0/ping")
             .body(&json!({"response_requested": true}).to_string()))
     }
 
-    fn build_response(&mut self) -> Result<Message, &'static str> {
+    pub fn build_response(&mut self) -> Result<Message, &'static str> {
         Ok(Message::new()
             .m_type("https://didcomm.org/trust-ping/2.0/ping-response")
             .thid(&self.message.as_ref().unwrap().get_didcomm_header().id))

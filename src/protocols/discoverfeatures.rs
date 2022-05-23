@@ -33,7 +33,7 @@ impl DiscoverFeaturesResponseBuilder {
         }
     }
 
-    fn build_query(&mut self) -> Result<Message, &'static str> {
+    pub fn build_query(&mut self) -> Result<Message, &'static str> {
         Ok(Message::new()
             .m_type("https://didcomm.org/discover-features/2.0/queries")
             .body(
@@ -44,7 +44,7 @@ impl DiscoverFeaturesResponseBuilder {
             ))
     }
 
-    fn build_disclose(&mut self) -> Result<Message, &'static str> {
+    pub fn build_disclose(&mut self) -> Result<Message, &'static str> {
         Ok(Message::new()
             .m_type("https://didcomm.org/discover-features/1.0/disclose")
             .thid(&self.message.as_ref().unwrap().get_didcomm_header().id)
