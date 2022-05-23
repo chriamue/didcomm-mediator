@@ -408,6 +408,8 @@ mod main_tests {
         let mediator_did = invitation.services[0].recipient_keys[0].to_string();
 
         let alice_key = generate::<X25519KeyPair>(None);
+        let did_doc = alice_key.get_did_document(CONFIG_JOSE_PUBLIC);
+        let alice_did = did_doc.id.to_string();
 
         let bob_key = generate::<X25519KeyPair>(None);
         let did_doc = bob_key.get_did_document(CONFIG_JOSE_PUBLIC);
@@ -479,6 +481,16 @@ mod main_tests {
             assert_eq!(
                 received.as_ref().unwrap().get_didcomm_header().m_type,
                 "https://didcomm.org/trust-ping/2.0/ping"
+            );
+            assert_eq!(
+                received
+                    .as_ref()
+                    .unwrap()
+                    .get_didcomm_header()
+                    .from
+                    .as_ref()
+                    .unwrap(),
+                &alice_did
             );
             println!("message {:?}", received);
         }

@@ -2,28 +2,18 @@
 use crate::connections::Connections;
 use crate::handler::{DidcommHandler, HandlerResponse};
 use did_key::KeyPair;
-use did_key::{DIDCore, CONFIG_LD_PUBLIC};
 use didcomm_rs::Message;
 use serde_json::json;
 use std::sync::{Arc, Mutex};
 
 #[derive(Default)]
 pub struct TrustPingResponseBuilder {
-    did: Option<String>,
     message: Option<Message>,
 }
 
 impl TrustPingResponseBuilder {
     pub fn new() -> Self {
-        TrustPingResponseBuilder {
-            did: None,
-            message: None,
-        }
-    }
-
-    pub fn did(&mut self, did: String) -> &mut Self {
-        self.did = Some(did);
-        self
+        TrustPingResponseBuilder { message: None }
     }
 
     pub fn message(&mut self, message: Message) -> &mut Self {
@@ -61,7 +51,7 @@ impl DidcommHandler for TrustPingHandler {
     fn handle(
         &self,
         request: &Message,
-        key: Option<&KeyPair>,
+        _key: Option<&KeyPair>,
         _connections: Option<&Arc<Mutex<Connections>>>,
     ) -> HandlerResponse {
         if request
@@ -69,10 +59,8 @@ impl DidcommHandler for TrustPingHandler {
             .m_type
             .starts_with("https://didcomm.org/trust-ping/2.0/")
         {
-            let did = key.unwrap().get_did_document(CONFIG_LD_PUBLIC).id;
             let response = TrustPingResponseBuilder::new()
                 .message(request.clone())
-                .did(did)
                 .build()
                 .unwrap()
                 .to(&[request.get_didcomm_header().from.as_ref().unwrap()]);
@@ -86,14 +74,11 @@ impl DidcommHandler for TrustPingHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use did_key::{generate, X25519KeyPair};
+    use did_key::{generate, DIDCore, X25519KeyPair};
 
     #[test]
     fn test_build_ping() {
-        let response = TrustPingResponseBuilder::new()
-            .did("did:key:z6MkpFZ86WuUpihn1mTRbpBCGE6YpCvsBYtZQYnd9jcuAUup".to_string())
-            .build()
-            .unwrap();
+        let response = TrustPingResponseBuilder::new().build().unwrap();
 
         assert_eq!(
             response.get_didcomm_header().m_type,
@@ -105,10 +90,7 @@ mod tests {
 
     #[test]
     fn test_build_response() {
-        let ping = TrustPingResponseBuilder::new()
-            .did("did:key:z6MkpFZ86WuUpihn1mTRbpBCGE6YpCvsBYtZQYnd9jcuAUup".to_string())
-            .build()
-            .unwrap();
+        let ping = TrustPingResponseBuilder::new().build().unwrap();
 
         assert_eq!(
             ping.get_didcomm_header().m_type,
@@ -117,7 +99,6 @@ mod tests {
 
         let response = TrustPingResponseBuilder::new()
             .message(ping)
-            .did("did:key:z6MkpFZ86WuUpihn1mTRbpBCGE6YpCvsBYtZQYnd9jcuAUup".to_string())
             .build()
             .unwrap();
 
