@@ -114,12 +114,9 @@ impl<'a> MessagePickupResponseBuilder<'a> {
                             .find(|(key, _)| *key == "batch_size")
                             .unwrap();
                         let batch_size = batch_size.clone().parse::<usize>().unwrap();
-                        let messages: Vec<Message> = connection
+                        let attachments: Vec<AttachmentBuilder> = connection
                             .messages
                             .drain(0..batch_size.min(connection.messages.len()))
-                            .collect::<Vec<_>>();
-                        let attachments: Vec<AttachmentBuilder> = messages
-                            .into_iter()
                             .map(|message| {
                                 AttachmentBuilder::new(true)
                                     .with_id(&Uuid::new_v4().to_string())

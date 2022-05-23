@@ -65,7 +65,6 @@ impl DidcommHandler for ForwardHandler {
                     let body: Value = serde_json::from_str(&request.get_body().unwrap()).unwrap();
                     let did_to = body["next"].as_str().unwrap();
                     let response_json = attachment.data.json.as_ref().unwrap();
-                    println!("did to{}", did_to);
                     HandlerResponse::Forward(
                         vec![did_to.to_string()],
                         serde_json::from_str(response_json).unwrap(),

@@ -75,7 +75,7 @@ impl DidcommHandler for TrustPingHandler {
                 .did(did)
                 .build()
                 .unwrap()
-                .to(&[&request.get_didcomm_header().from.as_ref().unwrap()]);
+                .to(&[request.get_didcomm_header().from.as_ref().unwrap()]);
             HandlerResponse::Send(Box::new(response))
         } else {
             HandlerResponse::Skipped

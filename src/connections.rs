@@ -61,11 +61,11 @@ impl Connections {
     pub fn insert_message_for(&mut self, message: Message, did_to: String) {
         match self.connections.get_mut(&did_to) {
             Some(connection) => {
-                connection.messages.push_back(message.clone());
+                connection.messages.push_back(message);
             }
             None => {
                 let mut connection = Connection::new(did_to.to_string(), Default::default());
-                connection.messages.push_back(message.clone());
+                connection.messages.push_back(message);
                 self.connections.insert(did_to.to_string(), connection);
             }
         }
