@@ -8,16 +8,25 @@ use std::sync::{Arc, Mutex};
 
 #[derive(Default)]
 pub struct TrustPingResponseBuilder {
+    thid: Option<String>,
     message: Option<Message>,
 }
 
 impl TrustPingResponseBuilder {
     pub fn new() -> Self {
-        TrustPingResponseBuilder { message: None }
+        TrustPingResponseBuilder {
+            thid: None,
+            message: None,
+        }
     }
 
     pub fn message(&mut self, message: Message) -> &mut Self {
         self.message = Some(message);
+        self
+    }
+
+    pub fn thid(&mut self, thid: String) -> &mut Self {
+        self.thid = Some(thid);
         self
     }
 
@@ -40,7 +49,11 @@ impl TrustPingResponseBuilder {
     pub fn build_response(&mut self) -> Result<Message, &'static str> {
         Ok(Message::new()
             .m_type("https://didcomm.org/trust-ping/2.0/ping-response")
-            .thid(&self.message.as_ref().unwrap().get_didcomm_header().id))
+            .thid(
+                self.thid
+                    .as_ref()
+                    .unwrap_or_else(|| &self.message.as_ref().unwrap().get_didcomm_header().id),
+            ))
     }
 }
 
@@ -100,6 +113,16 @@ mod tests {
         let response = TrustPingResponseBuilder::new()
             .message(ping)
             .build()
+            .unwrap();
+
+        assert_eq!(
+            response.get_didcomm_header().m_type,
+            "https://didcomm.org/trust-ping/2.0/ping-response"
+        );
+
+        let response = TrustPingResponseBuilder::new()
+            .thid("42".to_string())
+            .build_response()
             .unwrap();
 
         assert_eq!(
