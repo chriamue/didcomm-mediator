@@ -1,6 +1,10 @@
 // https://identity.foundation/didcomm-messaging/spec/#messages
+use crate::connections::Connections;
+use crate::handler::{DidcommHandler, HandlerResponse};
+use did_key::KeyPair;
 use didcomm_rs::{AttachmentBuilder, AttachmentDataBuilder, Message};
-use serde_json::json;
+use serde_json::{json, Value};
+use std::sync::{Arc, Mutex};
 
 #[derive(Default)]
 pub struct ForwardBuilder {
@@ -38,6 +42,40 @@ impl ForwardBuilder {
             ),
         );
         Ok(message)
+    }
+}
+
+#[derive(Default)]
+pub struct ForwardHandler {}
+
+impl DidcommHandler for ForwardHandler {
+    fn handle(
+        &self,
+        request: &Message,
+        _key: Option<&KeyPair>,
+        _connections: Option<&Arc<Mutex<Connections>>>,
+    ) -> HandlerResponse {
+        if request
+            .get_didcomm_header()
+            .m_type
+            .starts_with("https://didcomm.org/routing/2.0/forward")
+        {
+            match request.get_attachments().next() {
+                Some(attachment) => {
+                    let body: Value = serde_json::from_str(&request.get_body().unwrap()).unwrap();
+                    let did_to = body["next"].as_str().unwrap();
+                    let response_json = attachment.data.json.as_ref().unwrap();
+                    println!("did to{}", did_to);
+                    HandlerResponse::Forward(
+                        vec![did_to.to_string()],
+                        serde_json::from_str(response_json).unwrap(),
+                    )
+                }
+                _ => HandlerResponse::Processed,
+            }
+        } else {
+            HandlerResponse::Skipped
+        }
     }
 }
 

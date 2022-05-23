@@ -11,6 +11,7 @@ use didcomm_mediator::invitation::{Invitation, InvitationResponse};
 use didcomm_mediator::protocols::didexchange::DidExchangeHandler;
 use didcomm_mediator::protocols::discoverfeatures::DiscoverFeaturesHandler;
 use didcomm_mediator::protocols::forward::ForwardBuilder;
+use didcomm_mediator::protocols::forward::ForwardHandler;
 use didcomm_mediator::protocols::messagepickup::MessagePickupHandler;
 use didcomm_mediator::protocols::trustping::TrustPingHandler;
 use didcomm_rs::Message;
@@ -83,6 +84,7 @@ fn didcomm_endpoint(
     let received = Message::receive(&body_str, Some(&key.private_key_bytes()), None, None).unwrap();
 
     let handlers: Vec<Box<dyn DidcommHandler>> = vec![
+        Box::new(ForwardHandler::default()),
         Box::new(DidExchangeHandler::default()),
         Box::new(DiscoverFeaturesHandler::default()),
         Box::new(TrustPingHandler::default()),
@@ -96,12 +98,12 @@ fn didcomm_endpoint(
             HandlerResponse::Forward(receivers, message) => {
                 for receiver in receivers {
                     let forward = ForwardBuilder::new()
-                        .did(receiver)
+                        .did(receiver.to_string())
                         .message(serde_json::to_string(&message).unwrap())
                         .build()
                         .unwrap();
                     let mut locked_connections = connections.try_lock().unwrap();
-                    locked_connections.insert_message(forward);
+                    locked_connections.insert_message_for(forward, receiver.to_string());
                 }
             }
             HandlerResponse::Send(message) => {
@@ -392,5 +394,93 @@ mod main_tests {
             println!("message {:?}", received);
         }
         assert!(message.get_attachments().next().is_some());
+    }
+
+    #[test]
+    fn test_forward() {
+        let rocket = rocket();
+        let client = Client::tracked(rocket).unwrap();
+        let req = client.get("/invitation");
+        let response = req.dispatch();
+        assert_eq!(response.status(), Status::Ok);
+        let invitation_response: InvitationResponse = response.into_json().unwrap();
+        let invitation = invitation_response.invitation;
+        let mediator_did = invitation.services[0].recipient_keys[0].to_string();
+
+        let alice_key = generate::<X25519KeyPair>(None);
+
+        let bob_key = generate::<X25519KeyPair>(None);
+        let did_doc = bob_key.get_did_document(CONFIG_JOSE_PUBLIC);
+        let bob_did = did_doc.id.to_string();
+        println!("bob did {}", bob_did);
+
+        let ping_request = TrustPingResponseBuilder::new().build().unwrap();
+
+        let ping_request = sign_and_encrypt(&ping_request, &bob_did, &alice_key);
+
+        let request = ForwardBuilder::new()
+            .message(serde_json::to_string(&ping_request).unwrap())
+            .did(bob_did.to_string())
+            .build()
+            .unwrap();
+        let request = sign_and_encrypt(&request, &mediator_did, &alice_key);
+
+        let mut req = client.post("/didcomm");
+        req.add_header(ContentType::JSON);
+        let req = req.body(serde_json::to_string(&request).unwrap());
+        let response = req.dispatch();
+        assert_eq!(response.status(), Status::Ok);
+
+        let request = MessagePickupResponseBuilder::new()
+            .did(bob_did.to_string())
+            .batch_size(10)
+            .build_batch_pickup()
+            .unwrap();
+        let request = sign_and_encrypt(&request, &mediator_did, &bob_key);
+
+        let mut req = client.post("/didcomm");
+        req.add_header(ContentType::JSON);
+        let req = req.body(serde_json::to_string(&request).unwrap());
+        let response = req.dispatch();
+        assert_eq!(response.status(), Status::Ok);
+
+        let response_json = response.into_string().unwrap();
+        let received = Message::receive(
+            &response_json,
+            Some(&bob_key.private_key_bytes()),
+            None,
+            None,
+        );
+
+        assert!(&received.is_ok());
+        let message: Message = received.unwrap();
+        println!("message {}", message.clone().as_raw_json().unwrap());
+
+        assert!(message.get_attachments().next().is_some());
+        let pickup = message.get_attachments().next().unwrap();
+        let response_json = pickup.data.json.as_ref().unwrap();
+        let forwarded = Message::receive(
+            &response_json,
+            Some(&bob_key.private_key_bytes()),
+            None,
+            None,
+        )
+        .unwrap();
+        assert!(forwarded.get_attachments().next().is_some());
+
+        for attachment in forwarded.get_attachments() {
+            let response_json = attachment.data.json.as_ref().unwrap();
+            let received = Message::receive(
+                &response_json,
+                Some(&bob_key.private_key_bytes()),
+                None,
+                None,
+            );
+            assert_eq!(
+                received.as_ref().unwrap().get_didcomm_header().m_type,
+                "https://didcomm.org/trust-ping/2.0/ping"
+            );
+            println!("message {:?}", received);
+        }
     }
 }
