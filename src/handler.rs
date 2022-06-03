@@ -1,4 +1,4 @@
-use crate::connections::Connections;
+use crate::connections::ConnectionStorage;
 use did_key::KeyPair;
 use didcomm_rs::Message;
 use serde_json::Value;
@@ -18,6 +18,6 @@ pub trait DidcommHandler {
         &self,
         request: &Message,
         key: Option<&KeyPair>,
-        connections: Option<&Arc<Mutex<Connections>>>,
+        connections: Option<&Arc<Mutex<Box<dyn ConnectionStorage>>>>,
     ) -> HandlerResponse;
 }

@@ -1,6 +1,6 @@
 // https://identity.foundation/didcomm-messaging/spec/#discover-features-protocol-20
 
-use crate::connections::Connections;
+use crate::connections::ConnectionStorage;
 use crate::handler::{DidcommHandler, HandlerResponse};
 use crate::message::sign_and_encrypt_message;
 use did_key::KeyPair;
@@ -82,7 +82,7 @@ impl DidcommHandler for DiscoverFeaturesHandler {
         &self,
         request: &Message,
         key: Option<&KeyPair>,
-        _connections: Option<&Arc<Mutex<Connections>>>,
+        _connections: Option<&Arc<Mutex<Box<dyn ConnectionStorage>>>>,
     ) -> HandlerResponse {
         if request
             .get_didcomm_header()

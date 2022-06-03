@@ -1,5 +1,5 @@
 // https://github.com/hyperledger/aries-rfcs/tree/main/features/0212-pickup
-use crate::connections::Connections;
+use crate::connections::ConnectionStorage;
 use crate::handler::{DidcommHandler, HandlerResponse};
 use crate::message::sign_and_encrypt_message;
 use did_key::KeyPair;
@@ -12,7 +12,7 @@ use uuid::Uuid;
 pub struct MessagePickupResponseBuilder<'a> {
     did: Option<String>,
     message: Option<Message>,
-    connections: Option<&'a Arc<Mutex<Connections>>>,
+    connections: Option<&'a Arc<Mutex<Box<dyn ConnectionStorage>>>>,
     batch_size: Option<u32>,
 }
 
@@ -41,7 +41,10 @@ impl<'a> MessagePickupResponseBuilder<'a> {
         self
     }
 
-    pub fn connections(&mut self, connections: &'a Arc<Mutex<Connections>>) -> &mut Self {
+    pub fn connections(
+        &mut self,
+        connections: &'a Arc<Mutex<Box<dyn ConnectionStorage>>>,
+    ) -> &mut Self {
         self.connections = Some(connections);
         self
     }
@@ -65,7 +68,7 @@ impl<'a> MessagePickupResponseBuilder<'a> {
         let message: Message = match &self.connections {
             Some(connections) => {
                 let connections = connections.try_lock().unwrap();
-                let connection = connections.connections.get(self.did.as_ref().unwrap());
+                let connection = connections.get(self.did.as_ref().unwrap().to_string());
                 match connection {
                     Some(connection) => Message::new().add_header_field(
                         "message_count".to_string(),
@@ -94,7 +97,7 @@ impl<'a> MessagePickupResponseBuilder<'a> {
     fn build_batch(&mut self) -> Result<Message, &'static str> {
         let batch: Message = match &self.connections {
             Some(connections) => {
-                let mut connections = connections.try_lock().unwrap();
+                let connections = connections.try_lock().unwrap();
                 let did_from: String = self
                     .message
                     .as_ref()
@@ -103,7 +106,7 @@ impl<'a> MessagePickupResponseBuilder<'a> {
                     .from
                     .clone()
                     .unwrap();
-                let connection = connections.connections.get_mut(&did_from);
+                let connection = connections.get(did_from);
                 match connection {
                     Some(connection) => {
                         let (_, batch_size) = self
@@ -114,9 +117,9 @@ impl<'a> MessagePickupResponseBuilder<'a> {
                             .find(|(key, _)| *key == "batch_size")
                             .unwrap();
                         let batch_size = batch_size.clone().parse::<usize>().unwrap();
-                        let attachments: Vec<AttachmentBuilder> = connection
-                            .messages
-                            .drain(0..batch_size.min(connection.messages.len()))
+                        let mut messages = connection.messages.clone();
+                        let attachments: Vec<AttachmentBuilder> = messages
+                            .drain(0..batch_size.min(messages.len()))
                             .map(|message| {
                                 AttachmentBuilder::new(true)
                                     .with_id(&Uuid::new_v4().to_string())
@@ -127,6 +130,7 @@ impl<'a> MessagePickupResponseBuilder<'a> {
                                     )
                             })
                             .collect();
+                        
                         let mut message = Message::new();
                         for attachment in attachments {
                             message.append_attachment(attachment);
@@ -153,7 +157,7 @@ impl DidcommHandler for MessagePickupHandler {
         &self,
         request: &Message,
         key: Option<&KeyPair>,
-        connections: Option<&Arc<Mutex<Connections>>>,
+        connections: Option<&Arc<Mutex<Box<dyn ConnectionStorage>>>>,
     ) -> HandlerResponse {
         if request
             .get_didcomm_header()
@@ -179,6 +183,7 @@ impl DidcommHandler for MessagePickupHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::connections::Connections;
     use did_key::{generate, X25519KeyPair};
 
     #[test]
@@ -212,7 +217,7 @@ mod tests {
         connections.insert_message(message);
 
         let response = MessagePickupResponseBuilder::new()
-            .connections(&Arc::new(Mutex::new(connections)))
+            .connections(&Arc::new(Mutex::new(Box::new(connections))))
             .message(request)
             .did("did:test".to_string())
             .build()
@@ -271,7 +276,7 @@ mod tests {
         connections.insert_message(message2);
 
         let response = MessagePickupResponseBuilder::new()
-            .connections(&Arc::new(Mutex::new(connections)))
+            .connections(&Arc::new(Mutex::new(Box::new(connections))))
             .message(request)
             .did("did:test".to_string())
             .build_batch()
@@ -304,7 +309,7 @@ mod tests {
         let response = handler.handle(
             &request,
             Some(&key),
-            Some(&Arc::new(Mutex::new(Default::default()))),
+            Some(&Arc::new(Mutex::new(Box::new(Connections::default())))),
         );
         assert_ne!(response, HandlerResponse::Skipped);
     }

@@ -1,6 +1,6 @@
 // https://didcomm.org/basicmessage/2.0/
 
-use crate::connections::Connections;
+use crate::connections::ConnectionStorage;
 use crate::handler::{DidcommHandler, HandlerResponse};
 use did_key::KeyPair;
 use didcomm_rs::Message;
@@ -46,7 +46,7 @@ impl DidcommHandler for BasicMessageHandler {
         &self,
         request: &Message,
         _key: Option<&KeyPair>,
-        _connections: Option<&Arc<Mutex<Connections>>>,
+        _connections: Option<&Arc<Mutex<Box<dyn ConnectionStorage>>>>,
     ) -> HandlerResponse {
         if request
             .get_didcomm_header()

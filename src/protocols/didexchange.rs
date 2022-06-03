@@ -1,5 +1,5 @@
 // https://github.com/hyperledger/aries-rfcs/blob/main/features/0023-did-exchange/README.md
-use crate::connections::Connections;
+use crate::connections::ConnectionStorage;
 use crate::handler::{DidcommHandler, HandlerResponse};
 use did_key::KeyPair;
 use did_key::{DIDCore, CONFIG_LD_PUBLIC};
@@ -104,7 +104,7 @@ impl DidcommHandler for DidExchangeHandler {
         &self,
         request: &Message,
         key: Option<&KeyPair>,
-        _connections: Option<&Arc<Mutex<Connections>>>,
+        _connections: Option<&Arc<Mutex<Box<dyn ConnectionStorage>>>>,
     ) -> HandlerResponse {
         if request
             .get_didcomm_header()

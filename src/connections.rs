@@ -32,6 +32,13 @@ impl Connection {
     }
 }
 
+pub trait ConnectionStorage: Send {
+    fn insert_message(&mut self, message: Message);
+    fn insert_message_for(&mut self, message: Message, did_to: String);
+    fn get_next(&mut self, did: String) -> Option<Message>;
+    fn get(&self, did: String) -> Option<&Connection>;
+}
+
 #[derive(Debug, Default, PartialEq, Deserialize)]
 pub struct Connections {
     pub connections: HashMap<String, Connection>,
@@ -41,8 +48,10 @@ impl Connections {
     pub fn new() -> Connections {
         Connections::default()
     }
+}
 
-    pub fn insert_message(&mut self, message: Message) {
+impl ConnectionStorage for Connections {
+    fn insert_message(&mut self, message: Message) {
         let dids = message.get_didcomm_header().to.to_vec();
         for did in &dids {
             match self.connections.get_mut(did) {
@@ -58,7 +67,7 @@ impl Connections {
         }
     }
 
-    pub fn insert_message_for(&mut self, message: Message, did_to: String) {
+    fn insert_message_for(&mut self, message: Message, did_to: String) {
         match self.connections.get_mut(&did_to) {
             Some(connection) => {
                 connection.messages.push_back(message);
@@ -71,11 +80,15 @@ impl Connections {
         }
     }
 
-    pub fn get_next(&mut self, did: String) -> Option<Message> {
+    fn get_next(&mut self, did: String) -> Option<Message> {
         match self.connections.get_mut(&did) {
             Some(connection) => connection.messages.pop_front(),
             None => None,
         }
+    }
+
+    fn get(&self, did: String) -> Option<&Connection> {
+        self.connections.get(&did)
     }
 }
 

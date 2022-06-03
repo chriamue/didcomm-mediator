@@ -5,7 +5,7 @@ use did_key::{
     generate, DIDCore, KeyMaterial, KeyPair, X25519KeyPair, CONFIG_JOSE_PUBLIC, CONFIG_LD_PUBLIC,
 };
 use didcomm_mediator::config::Config;
-use didcomm_mediator::connections::Connections;
+use didcomm_mediator::connections::{ConnectionStorage, Connections};
 use didcomm_mediator::handler::{DidcommHandler, HandlerResponse};
 use didcomm_mediator::invitation::{Invitation, InvitationResponse};
 use didcomm_mediator::protocols::didexchange::DidExchangeHandler;
@@ -75,11 +75,11 @@ fn didcomm_options() -> Status {
 #[post("/didcomm", format = "any", data = "<body>")]
 fn didcomm_endpoint(
     key: &State<KeyPair>,
-    connections: &State<Arc<Mutex<Connections>>>,
+    connections: &State<Arc<Mutex<Box<dyn ConnectionStorage>>>>,
     body: Json<Value>,
 ) -> Json<Value> {
     let body_str = serde_json::to_string(&body.into_inner()).unwrap();
-    let connections: &Arc<Mutex<Connections>> = connections;
+    let connections: &Arc<Mutex<Box<dyn ConnectionStorage>>> = connections;
 
     let received = Message::receive(&body_str, Some(&key.private_key_bytes()), None, None).unwrap();
 
@@ -158,7 +158,8 @@ fn rocket() -> _ {
 
     config.did = did;
 
-    let connections = Arc::new(Mutex::new(Connections::new()));
+    let connections: Arc<Mutex<Box<dyn ConnectionStorage>>> =
+        Arc::new(Mutex::new(Box::new(Connections::new())));
 
     rocket
         .attach(CORS)
