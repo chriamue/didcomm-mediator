@@ -36,6 +36,7 @@ pub trait ConnectionStorage: Send {
     fn insert_message(&mut self, message: Message);
     fn insert_message_for(&mut self, message: Message, did_to: String);
     fn get_next(&mut self, did: String) -> Option<Message>;
+    fn get_messages(&mut self, did: String, batch_size: usize) -> Option<Vec<Message>>;
     fn get(&self, did: String) -> Option<&Connection>;
 }
 
@@ -83,6 +84,20 @@ impl ConnectionStorage for Connections {
     fn get_next(&mut self, did: String) -> Option<Message> {
         match self.connections.get_mut(&did) {
             Some(connection) => connection.messages.pop_front(),
+            None => None,
+        }
+    }
+
+    fn get_messages(&mut self, did: String, batch_size: usize) -> Option<Vec<Message>> {
+        match self.connections.get_mut(&did) {
+            Some(connection) => {
+                let messages = connection
+                    .messages
+                    .drain(0..batch_size.min(connection.messages.len()));
+
+                let messages: Vec<Message> = messages.collect();
+                Some(messages)
+            }
             None => None,
         }
     }

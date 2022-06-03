@@ -97,7 +97,7 @@ impl<'a> MessagePickupResponseBuilder<'a> {
     fn build_batch(&mut self) -> Result<Message, &'static str> {
         let batch: Message = match &self.connections {
             Some(connections) => {
-                let connections = connections.try_lock().unwrap();
+                let mut connections = connections.try_lock().unwrap();
                 let did_from: String = self
                     .message
                     .as_ref()
@@ -106,20 +106,19 @@ impl<'a> MessagePickupResponseBuilder<'a> {
                     .from
                     .clone()
                     .unwrap();
-                let connection = connections.get(did_from);
-                match connection {
-                    Some(connection) => {
-                        let (_, batch_size) = self
-                            .message
-                            .as_ref()
-                            .unwrap()
-                            .get_application_params()
-                            .find(|(key, _)| *key == "batch_size")
-                            .unwrap();
-                        let batch_size = batch_size.clone().parse::<usize>().unwrap();
-                        let mut messages = connection.messages.clone();
+                let (_, batch_size) = self
+                    .message
+                    .as_ref()
+                    .unwrap()
+                    .get_application_params()
+                    .find(|(key, _)| *key == "batch_size")
+                    .unwrap();
+                let batch_size = batch_size.clone().parse::<usize>().unwrap();
+                let messages = connections.get_messages(did_from, batch_size);
+                match messages {
+                    Some(messages) => {
                         let attachments: Vec<AttachmentBuilder> = messages
-                            .drain(0..batch_size.min(messages.len()))
+                            .into_iter()
                             .map(|message| {
                                 AttachmentBuilder::new(true)
                                     .with_id(&Uuid::new_v4().to_string())
@@ -130,11 +129,12 @@ impl<'a> MessagePickupResponseBuilder<'a> {
                                     )
                             })
                             .collect();
-                        
+
                         let mut message = Message::new();
                         for attachment in attachments {
                             message.append_attachment(attachment);
                         }
+
                         message
                     }
                     _ => Message::new(),
@@ -275,8 +275,20 @@ mod tests {
         let message2 = Message::new().to(&["did:test"]);
         connections.insert_message(message2);
 
+        assert_eq!(
+            connections
+                .get("did:test".to_string())
+                .unwrap()
+                .messages
+                .len(),
+            2
+        );
+
+        let connections: Arc<Mutex<Box<dyn ConnectionStorage>>> =
+            Arc::new(Mutex::new(Box::new(connections)));
+
         let response = MessagePickupResponseBuilder::new()
-            .connections(&Arc::new(Mutex::new(Box::new(connections))))
+            .connections(&connections)
             .message(request)
             .did("did:test".to_string())
             .build_batch()
@@ -288,6 +300,17 @@ mod tests {
         );
 
         assert!(response.get_attachments().next().is_some());
+
+        assert_eq!(
+            connections
+                .try_lock()
+                .unwrap()
+                .get("did:test".to_string())
+                .unwrap()
+                .messages
+                .len(),
+            1
+        );
 
         println!("{}", serde_json::to_string_pretty(&response).unwrap());
     }
