@@ -1,9 +1,9 @@
 use didcomm_rs::Message;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::collections::VecDeque;
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
 pub enum ConnectionEndpoint {
     Internal,
     Http(String),
@@ -15,7 +15,7 @@ impl Default for ConnectionEndpoint {
     }
 }
 
-#[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Default, PartialEq, Serialize, Deserialize, Clone)]
 pub struct Connection {
     pub did: String,
     pub endpoint: ConnectionEndpoint,
@@ -37,7 +37,7 @@ pub trait ConnectionStorage: Send {
     fn insert_message_for(&mut self, message: Message, did_to: String);
     fn get_next(&mut self, did: String) -> Option<Message>;
     fn get_messages(&mut self, did: String, batch_size: usize) -> Option<Vec<Message>>;
-    fn get(&self, did: String) -> Option<&Connection>;
+    fn get(&self, did: String) -> Option<Connection>;
 }
 
 #[derive(Debug, Default, PartialEq, Deserialize)]
@@ -102,8 +102,11 @@ impl ConnectionStorage for Connections {
         }
     }
 
-    fn get(&self, did: String) -> Option<&Connection> {
-        self.connections.get(&did)
+    fn get(&self, did: String) -> Option<Connection> {
+        match self.connections.get(&did) {
+            None => None,
+            Some(connection) => Some(connection.clone()),
+        }
     }
 }
 
