@@ -1,9 +1,9 @@
 use didcomm_rs::Message;
-use serde::Deserialize;
+use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
 use std::collections::VecDeque;
 
-#[derive(Debug, PartialEq, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub enum ConnectionEndpoint {
     Internal,
     Http(String),
@@ -15,7 +15,7 @@ impl Default for ConnectionEndpoint {
     }
 }
 
-#[derive(Debug, Default, PartialEq, Deserialize)]
+#[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Connection {
     pub did: String,
     pub endpoint: ConnectionEndpoint,
