@@ -7,6 +7,7 @@ compatibility_date = "2022-06-03"
 WORKERS_RS_VERSION = "0.0.9"
 IDENT = "mediator"
 EXT_SERVICE = "http://localhost:8787"
+CORS_ORIGIN = "*"
 
 [env.production.vars]
 EXT_SERVICE = "https://mediator.souls.quest"
