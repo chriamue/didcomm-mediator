@@ -5,12 +5,11 @@ use did_key::{
 use didcomm_mediator::connections::ConnectionStorage;
 use didcomm_mediator::invitation::Invitation;
 use serde_json::{json, Value};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use worker::*;
 mod connections;
 mod utils;
-use didcomm_rs::Message;
-
+use async_mutex::Mutex;
 use didcomm_mediator::handler::{DidcommHandler, HandlerResponse};
 use didcomm_mediator::protocols::didexchange::DidExchangeHandler;
 use didcomm_mediator::protocols::discoverfeatures::DiscoverFeaturesHandler;
@@ -18,6 +17,7 @@ use didcomm_mediator::protocols::forward::ForwardBuilder;
 use didcomm_mediator::protocols::forward::ForwardHandler;
 use didcomm_mediator::protocols::messagepickup::MessagePickupHandler;
 use didcomm_mediator::protocols::trustping::TrustPingHandler;
+use didcomm_rs::Message;
 
 fn log_request(req: &Request) {
     console_log!(
@@ -64,7 +64,7 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
             let did_doc = key.get_did_document(CONFIG_JOSE_PUBLIC);
             let did = did_doc.id;
             let mut headers = worker::Headers::new();
-            headers.set("Access-Control-Allow-Methods", "GET")?;
+            headers.set("Access-Control-Allow-Methods", "POST, GET, PATCH, OPTIONS")?;
             headers.set("Access-Control-Allow-Origin", "*")?;
             headers.set("Access-Control-Allow-Headers", "*")?;
             headers.set("Access-Control-Allow-Credentials", "true")?;
@@ -95,21 +95,34 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
             Response::from_json(&did_doc)
         })
         .post_async("/didcomm", |mut req, ctx| async move {
-            let body: Value = req.json().await.unwrap();
+            let body: Value = match req.json().await {
+                Ok(res) => res,
+                Err(_) => return Response::error("Bad request", 400),
+            };
             let body_str = serde_json::to_string(&body).unwrap();
-            console_log!("{}", body_str);
-            let connections: Arc<Mutex<Box<dyn ConnectionStorage>>> =
-                Arc::new(Mutex::new(Box::new(connections::Connections::new())));
+            let connections: Arc<Mutex<Box<dyn ConnectionStorage>>> = Arc::new(Mutex::new(
+                Box::new(didcomm_mediator::connections::Connections::new()),
+            ));
             let seed = ctx.secret("SEED").unwrap().to_string();
             let key = generate::<X25519KeyPair>(Some(&seed.from_base58().unwrap()));
             let mut headers = worker::Headers::new();
             headers.set("Access-Control-Allow-Methods", "POST")?;
+            headers.set("Content-Type", "application/json")?;
             headers.set("Access-Control-Allow-Origin", "*")?;
             headers.set("Access-Control-Allow-Headers", "*")?;
             headers.set("Access-Control-Allow-Credentials", "true")?;
 
+            let kv = match connections::kv() {
+                Ok(kv) => Some(kv),
+                _ => None,
+            };
+            console_log!("{:?}", kv.is_some());
+
             let received =
-                Message::receive(&body_str, Some(&key.private_key_bytes()), None, None).unwrap();
+                match Message::receive(&body_str, Some(&key.private_key_bytes()), None, None) {
+                    Ok(received) => received,
+                    Err(error) => return Response::error(format!("{:?}", error), 400),
+                };
 
             let handlers: Vec<Box<dyn DidcommHandler>> = vec![
                 Box::new(ForwardHandler::default()),
@@ -120,10 +133,13 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
             ];
 
             for handler in handlers {
-                match handler.handle(&received, Some(&key), Some(&connections)) {
-                    HandlerResponse::Skipped => {}
-                    HandlerResponse::Processed => {}
-                    HandlerResponse::Forward(receivers, message) => {
+                match handler
+                    .handle(&received, Some(&key), Some(&connections))
+                    .await
+                {
+                    Ok(HandlerResponse::Skipped) => {}
+                    Ok(HandlerResponse::Processed) => {}
+                    Ok(HandlerResponse::Forward(receivers, message)) => {
                         for receiver in receivers {
                             let forward = ForwardBuilder::new()
                                 .did(receiver.to_string())
@@ -131,20 +147,20 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
                                 .build()
                                 .unwrap();
                             let mut locked_connections = connections.try_lock().unwrap();
-                            locked_connections.insert_message_for(forward, receiver.to_string());
+                            locked_connections.insert_message_for(forward, receiver.to_string()).await;
                         }
                     }
-                    HandlerResponse::Send(message) => {
+                    Ok(HandlerResponse::Send(message)) => {
                         let mut locked_connections = connections.try_lock().unwrap();
-                        locked_connections.insert_message(*message);
+                        locked_connections.insert_message(*message).await;
                     }
-                    HandlerResponse::Response(product) => {
+                    Ok(HandlerResponse::Response(product)) => {
                         let response = Response::from_json(&product).unwrap();
                         return Ok(response.with_headers(headers));
                     }
+                    Err(error) => return Response::error(format!("{:?}", error), 400),
                 }
             }
-
             let response = Response::from_json(&json!({})).unwrap();
             Ok(response.with_headers(headers))
         })

@@ -3,6 +3,10 @@ type = "javascript"
 workers_dev = true
 compatibility_date = "2022-06-03"
 
+kv_namespaces = [
+    { binding = "KV_CONNECTIONS", preview_id = "", id = "" },
+]
+
 [vars]
 WORKERS_RS_VERSION = "0.0.9"
 IDENT = "mediator"

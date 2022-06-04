@@ -24,3 +24,9 @@ wrangler dev
 # deploy your Worker globally to the Cloudflare network (update your wrangler.toml file for configuration)
 wrangler publish
 ```
+
+Add kv namespaces
+
+```sh
+wrangler kv:namespace create "KV_CONNECTIONS" --preview
+```
