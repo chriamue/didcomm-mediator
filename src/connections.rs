@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use didcomm_rs::Message;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -32,12 +33,13 @@ impl Connection {
     }
 }
 
-pub trait ConnectionStorage: Send {
-    fn insert_message(&mut self, message: Message);
-    fn insert_message_for(&mut self, message: Message, did_to: String);
-    fn get_next(&mut self, did: String) -> Option<Message>;
-    fn get_messages(&mut self, did: String, batch_size: usize) -> Option<Vec<Message>>;
-    fn get(&self, did: String) -> Option<Connection>;
+#[async_trait]
+pub trait ConnectionStorage: Send + Sync {
+    async fn insert_message(&mut self, message: Message);
+    async fn insert_message_for(&mut self, message: Message, did_to: String);
+    async fn get_next(&mut self, did: String) -> Option<Message>;
+    async fn get_messages(&mut self, did: String, batch_size: usize) -> Option<Vec<Message>>;
+    async fn get(&self, did: String) -> Option<Connection>;
 }
 
 #[derive(Debug, Default, PartialEq, Deserialize)]
@@ -51,8 +53,12 @@ impl Connections {
     }
 }
 
+unsafe impl Send for Connections {}
+unsafe impl Sync for Connections {}
+
+#[async_trait]
 impl ConnectionStorage for Connections {
-    fn insert_message(&mut self, message: Message) {
+    async fn insert_message(&mut self, message: Message) {
         let dids = message.get_didcomm_header().to.to_vec();
         for did in &dids {
             match self.connections.get_mut(did) {
@@ -68,7 +74,7 @@ impl ConnectionStorage for Connections {
         }
     }
 
-    fn insert_message_for(&mut self, message: Message, did_to: String) {
+    async fn insert_message_for(&mut self, message: Message, did_to: String) {
         match self.connections.get_mut(&did_to) {
             Some(connection) => {
                 connection.messages.push_back(message);
@@ -81,14 +87,14 @@ impl ConnectionStorage for Connections {
         }
     }
 
-    fn get_next(&mut self, did: String) -> Option<Message> {
+    async fn get_next(&mut self, did: String) -> Option<Message> {
         match self.connections.get_mut(&did) {
             Some(connection) => connection.messages.pop_front(),
             None => None,
         }
     }
 
-    fn get_messages(&mut self, did: String, batch_size: usize) -> Option<Vec<Message>> {
+    async fn get_messages(&mut self, did: String, batch_size: usize) -> Option<Vec<Message>> {
         match self.connections.get_mut(&did) {
             Some(connection) => {
                 let messages = connection
@@ -102,7 +108,7 @@ impl ConnectionStorage for Connections {
         }
     }
 
-    fn get(&self, did: String) -> Option<Connection> {
+    async fn get(&self, did: String) -> Option<Connection> {
         match self.connections.get(&did) {
             None => None,
             Some(connection) => Some(connection.clone()),
@@ -114,16 +120,16 @@ impl ConnectionStorage for Connections {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_insert_message() {
+    #[tokio::test]
+    async fn test_insert_message() {
         let mut connections = Connections::default();
         let message = Message::new().to(&["did:test"]);
-        connections.insert_message(message);
+        connections.insert_message(message).await;
 
         assert_eq!(connections.connections.len(), 1);
 
         let message = Message::new().to(&["did:test"]);
-        connections.insert_message(message);
+        connections.insert_message(message).await;
 
         assert_eq!(connections.connections.len(), 1);
         let connection = connections.connections.get("did:test").unwrap();

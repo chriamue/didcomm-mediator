@@ -2,12 +2,13 @@
 
 use crate::connections::ConnectionStorage;
 use crate::handler::{DidcommHandler, HandlerResponse};
+use async_mutex::Mutex;
 use async_trait::async_trait;
 use did_key::KeyPair;
 use didcomm_rs::Message;
 use serde_json::json;
 use std::error::Error;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 #[derive(Default)]
 pub struct BasicMessageBuilder {

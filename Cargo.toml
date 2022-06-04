@@ -20,6 +20,7 @@ default = ["bin"]
 [dependencies]
 arrayref = "0.3"
 async-trait = "0.1.56"
+async-mutex = "1.4.0"
 base58 = "0.2.0"
 chrono = "0.4"
 did-key = "*"

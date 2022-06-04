@@ -1,13 +1,14 @@
 // https://github.com/hyperledger/aries-rfcs/blob/main/features/0023-did-exchange/README.md
 use crate::connections::ConnectionStorage;
 use crate::handler::{DidcommHandler, HandlerResponse};
+use async_mutex::Mutex;
 use async_trait::async_trait;
 use did_key::KeyPair;
 use did_key::{DIDCore, CONFIG_LD_PUBLIC};
 use didcomm_rs::Message;
 use serde_json::Value;
 use std::error::Error;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 #[derive(Default)]
 pub struct DidExchangeResponseBuilder {

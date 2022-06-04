@@ -1,5 +1,6 @@
 #[macro_use]
 extern crate rocket;
+use async_mutex::Mutex;
 use base58::{FromBase58, ToBase58};
 use did_key::{
     generate, DIDCore, KeyMaterial, KeyPair, X25519KeyPair, CONFIG_JOSE_PUBLIC, CONFIG_LD_PUBLIC,
@@ -20,7 +21,7 @@ use rocket::http::{Header, Status};
 use rocket::{response::Redirect, serde::json::Json, State};
 use rocket::{Request, Response};
 use serde_json::Value;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::vec;
 
 #[get("/", rank = 3)]
@@ -95,13 +96,17 @@ async fn didcomm_endpoint(
     ];
 
     for handler in handlers {
-        let handled = handler
-            .handle(&received, Some(key), Some(connections))
-            .await;
+        let handled = {
+            let connections = connections.clone();
+            let handled = handler
+                .handle(&received, Some(key), Some(&connections))
+                .await;
+            handled.unwrap()
+        };
         match handled {
-            Ok(HandlerResponse::Skipped) => {}
-            Ok(HandlerResponse::Processed) => {}
-            Ok(HandlerResponse::Forward(receivers, message)) => {
+            HandlerResponse::Skipped => {}
+            HandlerResponse::Processed => {}
+            HandlerResponse::Forward(receivers, message) => {
                 for receiver in receivers {
                     let forward = ForwardBuilder::new()
                         .did(receiver.to_string())
@@ -109,15 +114,17 @@ async fn didcomm_endpoint(
                         .build()
                         .unwrap();
                     let mut locked_connections = connections.try_lock().unwrap();
-                    locked_connections.insert_message_for(forward, receiver.to_string());
+                    locked_connections
+                        .insert_message_for(forward, receiver.to_string())
+                        .await;
+                    drop(locked_connections);
                 }
             }
-            Ok(HandlerResponse::Send(message)) => {
+            HandlerResponse::Send(message) => {
                 let mut locked_connections = connections.try_lock().unwrap();
-                locked_connections.insert_message(*message);
+                locked_connections.insert_message(*message).await;
             }
-            Ok(HandlerResponse::Response(product)) => return Ok(Json(product)),
-            Err(_) => {}
+            HandlerResponse::Response(product) => return Ok(Json(product)),
         }
     }
     Ok(Json(serde_json::json!({})))

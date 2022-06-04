@@ -2,12 +2,13 @@
 use crate::connections::ConnectionStorage;
 use crate::handler::{DidcommHandler, HandlerResponse};
 use crate::message::sign_and_encrypt_message;
+use async_mutex::Mutex;
 use async_trait::async_trait;
 use did_key::KeyPair;
 use did_key::{DIDCore, CONFIG_LD_PUBLIC};
 use didcomm_rs::{AttachmentBuilder, AttachmentDataBuilder, Message};
 use std::error::Error;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use uuid::Uuid;
 
 #[derive(Default)]
@@ -51,11 +52,11 @@ impl<'a> MessagePickupResponseBuilder<'a> {
         self
     }
 
-    pub fn build(&mut self) -> Result<Message, &'static str> {
+    pub async fn build(&mut self) -> Result<Message, &'static str> {
         match &self.message {
             Some(message) => match message.get_didcomm_header().m_type.as_str() {
-                "https://didcomm.org/messagepickup/1.0/status-request" => self.build_status(),
-                "https://didcomm.org/messagepickup/1.0/batch-pickup" => self.build_batch(),
+                "https://didcomm.org/messagepickup/1.0/status-request" => self.build_status().await,
+                "https://didcomm.org/messagepickup/1.0/batch-pickup" => self.build_batch().await,
                 _ => Err("unsupported message"),
             },
             None => self.build_status_request(),
@@ -66,20 +67,19 @@ impl<'a> MessagePickupResponseBuilder<'a> {
         Ok(Message::new().m_type("https://didcomm.org/messagepickup/1.0/status-request"))
     }
 
-    fn build_status(&mut self) -> Result<Message, &'static str> {
-        let message: Message = match &self.connections {
-            Some(connections) => {
-                let connections = connections.try_lock().unwrap();
-                let connection = connections.get(self.did.as_ref().unwrap().to_string());
-                match connection {
-                    Some(connection) => Message::new().add_header_field(
-                        "message_count".to_string(),
-                        format!("{}", connection.messages.len()),
-                    ),
-                    _ => Message::new(),
-                }
+    async fn build_status(&mut self) -> Result<Message, &'static str> {
+        let message: Message = {
+            let connection = {
+                let muted = self.connections.unwrap().try_lock().unwrap();
+                muted.get(self.did.as_ref().unwrap().to_string()).await
+            };
+            match connection {
+                Some(connection) => Message::new().add_header_field(
+                    "message_count".to_string(),
+                    format!("{}", connection.messages.len()),
+                ),
+                _ => Message::new().add_header_field("message_count".to_string(), format!("{}", 0)),
             }
-            None => Message::new(),
         };
 
         Ok(message
@@ -96,55 +96,53 @@ impl<'a> MessagePickupResponseBuilder<'a> {
             ))
     }
 
-    fn build_batch(&mut self) -> Result<Message, &'static str> {
-        let batch: Message = match self.connections {
-            Some(connections) => match connections.lock() {
-                Ok(mut connections) => {
-                    let did_from: String = self
-                        .message
-                        .as_ref()
-                        .unwrap()
-                        .get_didcomm_header()
-                        .from
-                        .clone()
-                        .unwrap();
-                    let (_, batch_size) = self
-                        .message
-                        .as_ref()
-                        .unwrap()
-                        .get_application_params()
-                        .find(|(key, _)| *key == "batch_size")
-                        .unwrap();
-                    let batch_size = batch_size.clone().parse::<usize>().unwrap();
-                    let messages = connections.get_messages(did_from, batch_size);
-                    match messages {
-                        Some(messages) => {
-                            let attachments: Vec<AttachmentBuilder> = messages
-                                .into_iter()
-                                .map(|message| {
-                                    AttachmentBuilder::new(true)
-                                        .with_id(&Uuid::new_v4().to_string())
-                                        .with_data(
-                                            AttachmentDataBuilder::new().with_link("no").with_json(
-                                                &serde_json::to_string(&message).unwrap(),
-                                            ),
-                                        )
-                                })
-                                .collect();
+    async fn build_batch(&mut self) -> Result<Message, &'static str> {
+        let did_from: String = self
+            .message
+            .as_ref()
+            .unwrap()
+            .get_didcomm_header()
+            .from
+            .clone()
+            .unwrap();
+        let (_, batch_size) = self
+            .message
+            .as_ref()
+            .unwrap()
+            .get_application_params()
+            .find(|(key, _)| *key == "batch_size")
+            .unwrap();
+        let batch_size = batch_size.clone().parse::<usize>().unwrap();
 
-                            let mut message = Message::new();
-                            for attachment in attachments {
-                                message.append_attachment(attachment);
-                            }
+        let messages = {
+            let mut connections = self.connections.unwrap().try_lock().unwrap();
+            let messages = connections.get_messages(did_from, batch_size).await;
+            messages.clone()
+        };
 
-                            message
-                        }
-                        _ => Message::new(),
-                    }
+        let batch: Message = match messages {
+            Some(messages) => {
+                let attachments: Vec<AttachmentBuilder> = messages
+                    .into_iter()
+                    .map(|message| {
+                        AttachmentBuilder::new(true)
+                            .with_id(&Uuid::new_v4().to_string())
+                            .with_data(
+                                AttachmentDataBuilder::new()
+                                    .with_link("no")
+                                    .with_json(&serde_json::to_string(&message).unwrap()),
+                            )
+                    })
+                    .collect();
+
+                let mut message = Message::new();
+                for attachment in attachments {
+                    message.append_attachment(attachment);
                 }
-                _ => Message::new(),
-            },
-            None => Message::new(),
+
+                message
+            }
+            _ => Message::new(),
         };
 
         Ok(batch
@@ -165,32 +163,39 @@ impl DidcommHandler for MessagePickupHandler {
         connections: Option<&Arc<Mutex<Box<dyn ConnectionStorage>>>>,
     ) -> Result<HandlerResponse, Box<dyn Error>> {
         let key = key.clone().unwrap();
-        if request
+        let did = key.get_did_document(CONFIG_LD_PUBLIC).id;
+        match request
             .get_didcomm_header()
             .m_type
             .starts_with("https://didcomm.org/messagepickup/1.0/")
         {
-            let did = key.get_did_document(CONFIG_LD_PUBLIC).id;
+            true => {
+                let response = {
+                    let connections: Arc<Mutex<Box<dyn ConnectionStorage>>> =
+                        connections.unwrap().clone();
+                    let message = MessagePickupResponseBuilder::new()
+                        .message(request.clone())
+                        .did(did)
+                        .connections(&connections)
+                        .build()
+                        .await;
+                    drop(connections);
+                    message
+                };
 
-            let response = MessagePickupResponseBuilder::new()
-                .message(request.clone())
-                .did(did)
-                .connections(connections.unwrap())
-                .build();
+                match response {
+                    Ok(response) => {
+                        let response = match sign_and_encrypt_message(request, &response, key) {
+                            Ok(response) => response,
+                            Err(error) => serde_json::to_value(error.to_string()).unwrap(),
+                        };
 
-            match response {
-                Ok(response) => {
-                    let response = match sign_and_encrypt_message(request, &response, key) {
-                        Ok(response) => response,
-                        Err(error) => serde_json::to_value(error.to_string()).unwrap(),
-                    };
-
-                    Ok(HandlerResponse::Response(response))
+                        Ok(HandlerResponse::Response(response))
+                    }
+                    Err(_) => Ok(HandlerResponse::Processed),
                 }
-                Err(_) => Ok(HandlerResponse::Processed),
             }
-        } else {
-            Ok(HandlerResponse::Skipped)
+            _ => Ok(HandlerResponse::Skipped),
         }
     }
 }
@@ -201,11 +206,12 @@ mod tests {
     use crate::connections::Connections;
     use did_key::{generate, X25519KeyPair};
 
-    #[test]
-    fn test_build_status_request() {
+    #[tokio::test]
+    async fn test_build_status_request() {
         let response = MessagePickupResponseBuilder::new()
             .did("did:test".to_string())
             .build()
+            .await
             .unwrap();
         assert_eq!(
             response.get_didcomm_header().m_type,
@@ -214,11 +220,12 @@ mod tests {
         println!("{}", serde_json::to_string_pretty(&response).unwrap());
     }
 
-    #[test]
-    fn test_build_status() {
+    #[tokio::test]
+    async fn test_build_status() {
         let mut request = MessagePickupResponseBuilder::new()
             .did("did:test".to_string())
             .build()
+            .await
             .unwrap();
         request = request.from("did:test");
 
@@ -229,13 +236,14 @@ mod tests {
 
         let mut connections = Connections::default();
         let message = Message::new().to(&["did:test"]);
-        connections.insert_message(message);
+        connections.insert_message(message).await;
 
         let response = MessagePickupResponseBuilder::new()
             .connections(&Arc::new(Mutex::new(Box::new(connections))))
             .message(request)
             .did("did:test".to_string())
             .build()
+            .await
             .unwrap();
 
         assert_eq!(
@@ -270,8 +278,8 @@ mod tests {
         println!("{}", serde_json::to_string_pretty(&response).unwrap());
     }
 
-    #[test]
-    fn test_build_batch() {
+    #[tokio::test]
+    async fn test_build_batch() {
         let mut request = MessagePickupResponseBuilder::new()
             .did("did:test".to_string())
             .batch_size(1)
@@ -286,13 +294,14 @@ mod tests {
 
         let mut connections = Connections::default();
         let message1 = Message::new().to(&["did:test"]);
-        connections.insert_message(message1);
+        connections.insert_message(message1).await;
         let message2 = Message::new().to(&["did:test"]);
-        connections.insert_message(message2);
+        connections.insert_message(message2).await;
 
         assert_eq!(
             connections
                 .get("did:test".to_string())
+                .await
                 .unwrap()
                 .messages
                 .len(),
@@ -307,6 +316,7 @@ mod tests {
             .message(request)
             .did("did:test".to_string())
             .build_batch()
+            .await
             .unwrap();
 
         assert_eq!(
@@ -321,6 +331,7 @@ mod tests {
                 .try_lock()
                 .unwrap()
                 .get("did:test".to_string())
+                .await
                 .unwrap()
                 .messages
                 .len(),
@@ -330,8 +341,8 @@ mod tests {
         println!("{}", serde_json::to_string_pretty(&response).unwrap());
     }
 
-    #[test]
-    fn test_ask_too_many_batches() {
+    #[tokio::test]
+    async fn test_ask_too_many_batches() {
         let mut request = MessagePickupResponseBuilder::new()
             .did("did:test".to_string())
             .batch_size(1)
@@ -346,7 +357,7 @@ mod tests {
 
         let connections = Connections::default();
 
-        assert!(connections.get("did:test".to_string()).is_none());
+        assert!(connections.get("did:test".to_string()).await.is_none());
 
         let connections: Arc<Mutex<Box<dyn ConnectionStorage>>> =
             Arc::new(Mutex::new(Box::new(connections)));
@@ -356,6 +367,7 @@ mod tests {
             .message(request)
             .did("did:test".to_string())
             .build_batch()
+            .await
             .unwrap();
 
         assert_eq!(
@@ -369,6 +381,7 @@ mod tests {
             .try_lock()
             .unwrap()
             .get("did:test".to_string())
+            .await
             .is_none());
 
         println!("{}", serde_json::to_string_pretty(&response).unwrap());
@@ -380,6 +393,7 @@ mod tests {
         let request = MessagePickupResponseBuilder::new()
             .did("did:test".to_string())
             .build()
+            .await
             .unwrap();
         let request = request.from(&key.get_did_document(Default::default()).id);
 
