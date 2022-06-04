@@ -1,6 +1,7 @@
 // https://github.com/hyperledger/aries-rfcs/blob/main/features/0023-did-exchange/README.md
 use crate::connections::ConnectionStorage;
 use crate::handler::{DidcommHandler, HandlerResponse};
+use async_trait::async_trait;
 use did_key::KeyPair;
 use did_key::{DIDCore, CONFIG_LD_PUBLIC};
 use didcomm_rs::Message;
@@ -100,8 +101,9 @@ impl DidExchangeResponseBuilder {
 #[derive(Default)]
 pub struct DidExchangeHandler {}
 
+#[async_trait]
 impl DidcommHandler for DidExchangeHandler {
-    fn handle(
+    async fn handle(
         &self,
         request: &Message,
         key: Option<&KeyPair>,
@@ -286,8 +288,8 @@ mod tests {
         println!("{}", serde_json::to_string_pretty(&complete).unwrap());
     }
 
-    #[test]
-    fn test_handler() {
+    #[tokio::test]
+    async fn test_handler() {
         let key = generate::<X25519KeyPair>(None);
         let key_to = generate::<X25519KeyPair>(None);
         let did_to = key_to.get_did_document(Default::default()).id;
@@ -314,7 +316,7 @@ mod tests {
             "https://didcomm.org/didexchange/1.0/request"
         );
         let handler = DidExchangeHandler::default();
-        let response = handler.handle(&request, Some(&key), None);
+        let response = handler.handle(&request, Some(&key), None).await;
         assert_ne!(response.unwrap(), HandlerResponse::Skipped);
     }
 }

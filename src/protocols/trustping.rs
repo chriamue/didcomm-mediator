@@ -1,6 +1,7 @@
 // https://identity.foundation/didcomm-messaging/spec/#trust-ping-protocol-20
 use crate::connections::ConnectionStorage;
 use crate::handler::{DidcommHandler, HandlerResponse};
+use async_trait::async_trait;
 use did_key::KeyPair;
 use didcomm_rs::Message;
 use serde_json::json;
@@ -61,8 +62,9 @@ impl TrustPingResponseBuilder {
 #[derive(Default)]
 pub struct TrustPingHandler {}
 
+#[async_trait]
 impl DidcommHandler for TrustPingHandler {
-    fn handle(
+    async fn handle(
         &self,
         request: &Message,
         _key: Option<&KeyPair>,
@@ -134,8 +136,8 @@ mod tests {
         println!("{}", serde_json::to_string_pretty(&response).unwrap());
     }
 
-    #[test]
-    fn test_handler() {
+    #[tokio::test]
+    async fn test_handler() {
         let key = generate::<X25519KeyPair>(None);
         let ping = TrustPingResponseBuilder::new().build().unwrap();
         let ping = ping.from(&key.get_did_document(Default::default()).id);
@@ -145,7 +147,7 @@ mod tests {
             "https://didcomm.org/trust-ping/2.0/ping"
         );
         let handler = TrustPingHandler::default();
-        let response = handler.handle(&ping, Some(&key), None);
+        let response = handler.handle(&ping, Some(&key), None).await;
         assert_ne!(response.unwrap(), HandlerResponse::Skipped);
     }
 }

@@ -1,4 +1,5 @@
 use crate::connections::ConnectionStorage;
+use async_trait::async_trait;
 use did_key::KeyPair;
 use didcomm_rs::Message;
 use serde_json::Value;
@@ -14,8 +15,9 @@ pub enum HandlerResponse {
     Response(Value),
 }
 
-pub trait DidcommHandler {
-    fn handle(
+#[async_trait]
+pub trait DidcommHandler: Send + Sync {
+    async fn handle(
         &self,
         request: &Message,
         key: Option<&KeyPair>,

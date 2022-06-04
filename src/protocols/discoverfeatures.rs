@@ -3,6 +3,7 @@
 use crate::connections::ConnectionStorage;
 use crate::handler::{DidcommHandler, HandlerResponse};
 use crate::message::sign_and_encrypt_message;
+use async_trait::async_trait;
 use did_key::KeyPair;
 use didcomm_rs::Message;
 use serde_json::json;
@@ -78,8 +79,9 @@ impl DiscoverFeaturesResponseBuilder {
 #[derive(Default)]
 pub struct DiscoverFeaturesHandler {}
 
+#[async_trait]
 impl DidcommHandler for DiscoverFeaturesHandler {
-    fn handle(
+    async fn handle(
         &self,
         request: &Message,
         key: Option<&KeyPair>,
@@ -144,8 +146,8 @@ mod tests {
         println!("{}", serde_json::to_string_pretty(&response).unwrap());
     }
 
-    #[test]
-    fn test_handler() {
+    #[tokio::test]
+    async fn test_handler() {
         let key = generate::<X25519KeyPair>(None);
         let key_from = generate::<X25519KeyPair>(None);
         let did_from = key_from.get_did_document(Default::default()).id;
@@ -159,7 +161,7 @@ mod tests {
             "https://didcomm.org/discover-features/2.0/queries"
         );
         let handler = DiscoverFeaturesHandler::default();
-        let response = handler.handle(&request, Some(&key), None);
+        let response = handler.handle(&request, Some(&key), None).await;
         assert_ne!(response.unwrap(), HandlerResponse::Skipped);
     }
 }

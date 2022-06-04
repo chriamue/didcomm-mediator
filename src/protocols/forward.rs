@@ -1,6 +1,7 @@
 // https://identity.foundation/didcomm-messaging/spec/#messages
 use crate::connections::ConnectionStorage;
 use crate::handler::{DidcommHandler, HandlerResponse};
+use async_trait::async_trait;
 use did_key::KeyPair;
 use didcomm_rs::{AttachmentBuilder, AttachmentDataBuilder, Message};
 use serde_json::{json, Value};
@@ -49,8 +50,9 @@ impl ForwardBuilder {
 #[derive(Default)]
 pub struct ForwardHandler {}
 
+#[async_trait]
 impl DidcommHandler for ForwardHandler {
-    fn handle(
+    async fn handle(
         &self,
         request: &Message,
         _key: Option<&KeyPair>,

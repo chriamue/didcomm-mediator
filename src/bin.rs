@@ -73,7 +73,7 @@ fn didcomm_options() -> Status {
 }
 
 #[post("/didcomm", format = "any", data = "<body>")]
-fn didcomm_endpoint(
+async fn didcomm_endpoint(
     key: &State<KeyPair>,
     connections: &State<Arc<Mutex<Box<dyn ConnectionStorage>>>>,
     body: Json<Value>,
@@ -95,7 +95,10 @@ fn didcomm_endpoint(
     ];
 
     for handler in handlers {
-        match handler.handle(&received, Some(key), Some(connections)) {
+        let handled = handler
+            .handle(&received, Some(key), Some(connections))
+            .await;
+        match handled {
             Ok(HandlerResponse::Skipped) => {}
             Ok(HandlerResponse::Processed) => {}
             Ok(HandlerResponse::Forward(receivers, message)) => {

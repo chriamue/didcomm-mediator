@@ -2,6 +2,7 @@
 
 use crate::connections::ConnectionStorage;
 use crate::handler::{DidcommHandler, HandlerResponse};
+use async_trait::async_trait;
 use did_key::KeyPair;
 use didcomm_rs::Message;
 use serde_json::json;
@@ -42,8 +43,9 @@ impl BasicMessageBuilder {
 #[derive(Default)]
 pub struct BasicMessageHandler {}
 
+#[async_trait]
 impl DidcommHandler for BasicMessageHandler {
-    fn handle(
+    async fn handle(
         &self,
         request: &Message,
         _key: Option<&KeyPair>,
@@ -85,8 +87,8 @@ mod tests {
         println!("{}", serde_json::to_string_pretty(&response).unwrap());
     }
 
-    #[test]
-    fn test_handler() {
+    #[tokio::test]
+    async fn test_handler() {
         let key = generate::<X25519KeyPair>(None);
         let message = BasicMessageBuilder::new()
             .message("Hello World!".to_string())
@@ -99,7 +101,7 @@ mod tests {
             "https://didcomm.org/basicmessage/2.0/message"
         );
         let handler = BasicMessageHandler::default();
-        let response = handler.handle(&message, Some(&key), None);
+        let response = handler.handle(&message, Some(&key), None).await;
         assert_ne!(response.unwrap(), HandlerResponse::Skipped);
     }
 }

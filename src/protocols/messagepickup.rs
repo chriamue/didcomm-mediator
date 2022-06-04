@@ -2,6 +2,7 @@
 use crate::connections::ConnectionStorage;
 use crate::handler::{DidcommHandler, HandlerResponse};
 use crate::message::sign_and_encrypt_message;
+use async_trait::async_trait;
 use did_key::KeyPair;
 use did_key::{DIDCore, CONFIG_LD_PUBLIC};
 use didcomm_rs::{AttachmentBuilder, AttachmentDataBuilder, Message};
@@ -155,8 +156,9 @@ impl<'a> MessagePickupResponseBuilder<'a> {
 #[derive(Default)]
 pub struct MessagePickupHandler {}
 
+#[async_trait]
 impl DidcommHandler for MessagePickupHandler {
-    fn handle(
+    async fn handle(
         &self,
         request: &Message,
         key: Option<&KeyPair>,
@@ -372,8 +374,8 @@ mod tests {
         println!("{}", serde_json::to_string_pretty(&response).unwrap());
     }
 
-    #[test]
-    fn test_handler() {
+    #[tokio::test]
+    async fn test_handler() {
         let key = generate::<X25519KeyPair>(None);
         let request = MessagePickupResponseBuilder::new()
             .did("did:test".to_string())
@@ -386,11 +388,13 @@ mod tests {
             "https://didcomm.org/messagepickup/1.0/status-request"
         );
         let handler = MessagePickupHandler::default();
-        let response = handler.handle(
-            &request,
-            Some(&key),
-            Some(&Arc::new(Mutex::new(Box::new(Connections::default())))),
-        );
+        let response = handler
+            .handle(
+                &request,
+                Some(&key),
+                Some(&Arc::new(Mutex::new(Box::new(Connections::default())))),
+            )
+            .await;
         assert_ne!(response.unwrap(), HandlerResponse::Skipped);
     }
 }
