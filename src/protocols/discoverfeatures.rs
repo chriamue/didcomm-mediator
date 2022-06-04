@@ -97,7 +97,7 @@ impl DidcommHandler for DiscoverFeaturesHandler {
             let response = sign_and_encrypt_message(request, &response, key.unwrap());
 
             Ok(HandlerResponse::Response(
-                serde_json::to_value(&response).unwrap(),
+                serde_json::to_value(&response.unwrap()).unwrap(),
             ))
         } else {
             Ok(HandlerResponse::Skipped)

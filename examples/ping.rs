@@ -40,7 +40,7 @@ async fn main() {
         .unwrap()
         .from(&did_from);
 
-    let request = sign_and_encrypt_message(&invitation, &request, &key);
+    let request = sign_and_encrypt_message(&invitation, &request, &key).unwrap();
 
     let start = Instant::now();
 

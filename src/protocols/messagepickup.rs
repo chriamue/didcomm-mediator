@@ -96,51 +96,53 @@ impl<'a> MessagePickupResponseBuilder<'a> {
     }
 
     fn build_batch(&mut self) -> Result<Message, &'static str> {
-        let batch: Message = match &self.connections {
-            Some(connections) => {
-                let mut connections = connections.try_lock().unwrap();
-                let did_from: String = self
-                    .message
-                    .as_ref()
-                    .unwrap()
-                    .get_didcomm_header()
-                    .from
-                    .clone()
-                    .unwrap();
-                let (_, batch_size) = self
-                    .message
-                    .as_ref()
-                    .unwrap()
-                    .get_application_params()
-                    .find(|(key, _)| *key == "batch_size")
-                    .unwrap();
-                let batch_size = batch_size.clone().parse::<usize>().unwrap();
-                let messages = connections.get_messages(did_from, batch_size);
-                match messages {
-                    Some(messages) => {
-                        let attachments: Vec<AttachmentBuilder> = messages
-                            .into_iter()
-                            .map(|message| {
-                                AttachmentBuilder::new(true)
-                                    .with_id(&Uuid::new_v4().to_string())
-                                    .with_data(
-                                        AttachmentDataBuilder::new()
-                                            .with_link("no")
-                                            .with_json(&serde_json::to_string(&message).unwrap()),
-                                    )
-                            })
-                            .collect();
+        let batch: Message = match self.connections {
+            Some(connections) => match connections.lock() {
+                Ok(mut connections) => {
+                    let did_from: String = self
+                        .message
+                        .as_ref()
+                        .unwrap()
+                        .get_didcomm_header()
+                        .from
+                        .clone()
+                        .unwrap();
+                    let (_, batch_size) = self
+                        .message
+                        .as_ref()
+                        .unwrap()
+                        .get_application_params()
+                        .find(|(key, _)| *key == "batch_size")
+                        .unwrap();
+                    let batch_size = batch_size.clone().parse::<usize>().unwrap();
+                    let messages = connections.get_messages(did_from, batch_size);
+                    match messages {
+                        Some(messages) => {
+                            let attachments: Vec<AttachmentBuilder> = messages
+                                .into_iter()
+                                .map(|message| {
+                                    AttachmentBuilder::new(true)
+                                        .with_id(&Uuid::new_v4().to_string())
+                                        .with_data(
+                                            AttachmentDataBuilder::new().with_link("no").with_json(
+                                                &serde_json::to_string(&message).unwrap(),
+                                            ),
+                                        )
+                                })
+                                .collect();
 
-                        let mut message = Message::new();
-                        for attachment in attachments {
-                            message.append_attachment(attachment);
+                            let mut message = Message::new();
+                            for attachment in attachments {
+                                message.append_attachment(attachment);
+                            }
+
+                            message
                         }
-
-                        message
+                        _ => Message::new(),
                     }
-                    _ => Message::new(),
                 }
-            }
+                _ => Message::new(),
+            },
             None => Message::new(),
         };
 
@@ -160,23 +162,31 @@ impl DidcommHandler for MessagePickupHandler {
         key: Option<&KeyPair>,
         connections: Option<&Arc<Mutex<Box<dyn ConnectionStorage>>>>,
     ) -> Result<HandlerResponse, Box<dyn Error>> {
+        let key = key.clone().unwrap();
         if request
             .get_didcomm_header()
             .m_type
             .starts_with("https://didcomm.org/messagepickup/1.0/")
         {
-            let did = key.unwrap().get_did_document(CONFIG_LD_PUBLIC).id;
+            let did = key.get_did_document(CONFIG_LD_PUBLIC).id;
+
             let response = MessagePickupResponseBuilder::new()
                 .message(request.clone())
                 .did(did)
                 .connections(connections.unwrap())
-                .build()
-                .unwrap();
-            let response = sign_and_encrypt_message(request, &response, key.unwrap());
+                .build();
 
-            Ok(HandlerResponse::Response(
-                serde_json::to_value(&response).unwrap(),
-            ))
+            match response {
+                Ok(response) => {
+                    let response = match sign_and_encrypt_message(request, &response, key) {
+                        Ok(response) => response,
+                        Err(error) => serde_json::to_value(error.to_string()).unwrap(),
+                    };
+
+                    Ok(HandlerResponse::Response(response))
+                }
+                Err(_) => Ok(HandlerResponse::Processed),
+            }
         } else {
             Ok(HandlerResponse::Skipped)
         }
@@ -314,6 +324,50 @@ mod tests {
                 .len(),
             1
         );
+
+        println!("{}", serde_json::to_string_pretty(&response).unwrap());
+    }
+
+    #[test]
+    fn test_ask_too_many_batches() {
+        let mut request = MessagePickupResponseBuilder::new()
+            .did("did:test".to_string())
+            .batch_size(1)
+            .build_batch_pickup()
+            .unwrap();
+        request = request.from("did:test");
+
+        assert_eq!(
+            request.get_didcomm_header().m_type,
+            "https://didcomm.org/messagepickup/1.0/batch-pickup"
+        );
+
+        let connections = Connections::default();
+
+        assert!(connections.get("did:test".to_string()).is_none());
+
+        let connections: Arc<Mutex<Box<dyn ConnectionStorage>>> =
+            Arc::new(Mutex::new(Box::new(connections)));
+
+        let response = MessagePickupResponseBuilder::new()
+            .connections(&connections)
+            .message(request)
+            .did("did:test".to_string())
+            .build_batch()
+            .unwrap();
+
+        assert_eq!(
+            response.get_didcomm_header().m_type,
+            "https://didcomm.org/messagepickup/1.0/batch"
+        );
+
+        assert!(response.get_attachments().next().is_none());
+
+        assert!(connections
+            .try_lock()
+            .unwrap()
+            .get("did:test".to_string())
+            .is_none());
 
         println!("{}", serde_json::to_string_pretty(&response).unwrap());
     }

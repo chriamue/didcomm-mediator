@@ -5,12 +5,20 @@ use didcomm_rs::{
 };
 use serde_json::Value;
 
-pub fn sign_and_encrypt_message(request: &Message, response: &Message, key: &KeyPair) -> Value {
+pub fn sign_and_encrypt_message(
+    request: &Message,
+    response: &Message,
+    key: &KeyPair,
+) -> Result<Value, Box<dyn std::error::Error>> {
     let recipient_did = request.get_didcomm_header().from.as_ref().unwrap();
     sign_and_encrypt(response, recipient_did, key)
 }
 
-pub fn sign_and_encrypt(message: &Message, did_to: &String, key: &KeyPair) -> Value {
+pub fn sign_and_encrypt(
+    message: &Message,
+    did_to: &String,
+    key: &KeyPair,
+) -> Result<Value, Box<dyn std::error::Error>> {
     let sign_key = generate::<Ed25519KeyPair>(None);
 
     let sender_did = key.get_did_document(Default::default()).id;
@@ -34,7 +42,7 @@ pub fn sign_and_encrypt(message: &Message, did_to: &String, key: &KeyPair) -> Va
             &[sign_key.private_key_bytes(), sign_key.public_key_bytes()].concat(),
         )
         .unwrap();
-    serde_json::from_str(&ready_to_send).unwrap()
+    Ok(serde_json::from_str(&ready_to_send).unwrap())
 }
 
 #[cfg(test)]
@@ -59,11 +67,9 @@ mod tests {
         let body = r#"{"foo":"bar"}"#;
         let message = Message::new().body(body);
 
-        let jwe_string = serde_json::to_string(&sign_and_encrypt_message(
-            &request,
-            &message,
-            &alice_keypair,
-        ))
+        let jwe_string = serde_json::to_string(
+            &sign_and_encrypt_message(&request, &message, &alice_keypair).unwrap(),
+        )
         .unwrap();
 
         let received = Message::receive(&jwe_string.as_str(), Some(&bobs_private), None, None);

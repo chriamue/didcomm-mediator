@@ -77,11 +77,14 @@ fn didcomm_endpoint(
     key: &State<KeyPair>,
     connections: &State<Arc<Mutex<Box<dyn ConnectionStorage>>>>,
     body: Json<Value>,
-) -> Json<Value> {
+) -> Result<Json<Value>, Status> {
     let body_str = serde_json::to_string(&body.into_inner()).unwrap();
     let connections: &Arc<Mutex<Box<dyn ConnectionStorage>>> = connections;
 
-    let received = Message::receive(&body_str, Some(&key.private_key_bytes()), None, None).unwrap();
+    let received = match Message::receive(&body_str, Some(&key.private_key_bytes()), None, None) {
+        Ok(received) => received,
+        Err(_) => return Err(Status::BadRequest),
+    };
 
     let handlers: Vec<Box<dyn DidcommHandler>> = vec![
         Box::new(ForwardHandler::default()),
@@ -110,11 +113,11 @@ fn didcomm_endpoint(
                 let mut locked_connections = connections.try_lock().unwrap();
                 locked_connections.insert_message(*message);
             }
-            Ok(HandlerResponse::Response(product)) => return Json(product),
+            Ok(HandlerResponse::Response(product)) => return Ok(Json(product)),
             Err(_) => {}
         }
     }
-    Json(serde_json::json!({}))
+    Ok(Json(serde_json::json!({})))
 }
 
 pub struct CORS;
@@ -265,6 +268,51 @@ mod main_tests {
     }
 
     #[test]
+    fn test_didcomm_wrong_key() {
+        let rocket = rocket();
+        let client = Client::tracked(rocket).unwrap();
+        let req = client.get("/invitation");
+        let response = req.dispatch();
+        assert_eq!(response.status(), Status::Ok);
+        let invitation_response: InvitationResponse = response.into_json().unwrap();
+        let invitation = invitation_response.invitation;
+        let recipient_did = invitation.services[0].recipient_keys[0].to_string();
+        let recipient_key = did_key::resolve(&recipient_did).unwrap();
+        let wrong_recipient_key = generate::<X25519KeyPair>(None);
+
+        let key = generate::<X25519KeyPair>(None);
+        let sign_key = generate::<Ed25519KeyPair>(None);
+        let did_doc = key.get_did_document(CONFIG_JOSE_PUBLIC);
+        let did_from = did_doc.id;
+
+        let body = r#"{"foo":"bar"}"#;
+        let message = Message::new()
+            .from(&did_from)
+            .to(&[&recipient_did])
+            .body(body)
+            .as_jwe(
+                &CryptoAlgorithm::XC20P,
+                Some(recipient_key.public_key_bytes()),
+            )
+            .kid(&hex::encode(sign_key.public_key_bytes()));
+
+        let ready_to_send = message
+            .seal_signed(
+                &key.private_key_bytes(),
+                Some(vec![Some(wrong_recipient_key.public_key_bytes())]),
+                SignatureAlgorithm::EdDsa,
+                &[sign_key.private_key_bytes(), sign_key.public_key_bytes()].concat(),
+            )
+            .unwrap();
+
+        let mut req = client.post("/didcomm");
+        req.add_header(ContentType::JSON);
+        let req = req.body(ready_to_send);
+        let response = req.dispatch();
+        assert_eq!(response.status(), Status::BadRequest);
+    }
+
+    #[test]
     fn test_trust_ping() {
         let rocket = rocket();
         let client = Client::tracked(rocket).unwrap();
@@ -312,7 +360,7 @@ mod main_tests {
             .batch_size(10)
             .build_batch_pickup()
             .unwrap();
-        let request = sign_and_encrypt(&request, &recipient_did, &key);
+        let request = sign_and_encrypt(&request, &recipient_did, &key).unwrap();
 
         let mut req = client.post("/didcomm");
         req.add_header(ContentType::JSON);
@@ -362,7 +410,7 @@ mod main_tests {
             .unwrap()
             .from(&did_from);
 
-        let request = sign_and_encrypt(&request, &recipient_did, &key);
+        let request = sign_and_encrypt(&request, &recipient_did, &key).unwrap();
 
         let mut req = client.post("/didcomm");
         req.add_header(ContentType::JSON);
@@ -375,7 +423,7 @@ mod main_tests {
             .batch_size(10)
             .build_batch_pickup()
             .unwrap();
-        let request = sign_and_encrypt(&request, &recipient_did, &key);
+        let request = sign_and_encrypt(&request, &recipient_did, &key).unwrap();
 
         let mut req = client.post("/didcomm");
         req.add_header(ContentType::JSON);
@@ -420,14 +468,14 @@ mod main_tests {
 
         let ping_request = TrustPingResponseBuilder::new().build().unwrap();
 
-        let ping_request = sign_and_encrypt(&ping_request, &bob_did, &alice_key);
+        let ping_request = sign_and_encrypt(&ping_request, &bob_did, &alice_key).unwrap();
 
         let request = ForwardBuilder::new()
             .message(serde_json::to_string(&ping_request).unwrap())
             .did(bob_did.to_string())
             .build()
             .unwrap();
-        let request = sign_and_encrypt(&request, &mediator_did, &alice_key);
+        let request = sign_and_encrypt(&request, &mediator_did, &alice_key).unwrap();
 
         let mut req = client.post("/didcomm");
         req.add_header(ContentType::JSON);
@@ -444,7 +492,7 @@ mod main_tests {
 
         let mut req = client.post("/didcomm");
         req.add_header(ContentType::JSON);
-        let req = req.body(serde_json::to_string(&request).unwrap());
+        let req = req.body(serde_json::to_string(&request.unwrap()).unwrap());
         let response = req.dispatch();
         assert_eq!(response.status(), Status::Ok);
 

@@ -37,7 +37,7 @@ async fn main() {
         .build()
         .unwrap();
 
-    let request = sign_and_encrypt(&request, did_to, &key);
+    let request = sign_and_encrypt(&request, did_to, &key).unwrap();
 
     let client = reqwest::Client::new();
     let res = client
