@@ -2,6 +2,7 @@ use crate::connections::ConnectionStorage;
 use did_key::KeyPair;
 use didcomm_rs::Message;
 use serde_json::Value;
+use std::error::Error;
 use std::sync::{Arc, Mutex};
 
 #[derive(Debug, PartialEq)]
@@ -19,5 +20,5 @@ pub trait DidcommHandler {
         request: &Message,
         key: Option<&KeyPair>,
         connections: Option<&Arc<Mutex<Box<dyn ConnectionStorage>>>>,
-    ) -> HandlerResponse;
+    ) -> Result<HandlerResponse, Box<dyn Error>>;
 }

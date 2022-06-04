@@ -4,6 +4,7 @@ use crate::handler::{DidcommHandler, HandlerResponse};
 use did_key::KeyPair;
 use didcomm_rs::Message;
 use serde_json::json;
+use std::error::Error;
 use std::sync::{Arc, Mutex};
 
 #[derive(Default)]
@@ -66,7 +67,7 @@ impl DidcommHandler for TrustPingHandler {
         request: &Message,
         _key: Option<&KeyPair>,
         _connections: Option<&Arc<Mutex<Box<dyn ConnectionStorage>>>>,
-    ) -> HandlerResponse {
+    ) -> Result<HandlerResponse, Box<dyn Error>> {
         if request
             .get_didcomm_header()
             .m_type
@@ -77,9 +78,9 @@ impl DidcommHandler for TrustPingHandler {
                 .build()
                 .unwrap()
                 .to(&[request.get_didcomm_header().from.as_ref().unwrap()]);
-            HandlerResponse::Send(Box::new(response))
+            Ok(HandlerResponse::Send(Box::new(response)))
         } else {
-            HandlerResponse::Skipped
+            Ok(HandlerResponse::Skipped)
         }
     }
 }
@@ -145,6 +146,6 @@ mod tests {
         );
         let handler = TrustPingHandler::default();
         let response = handler.handle(&ping, Some(&key), None);
-        assert_ne!(response, HandlerResponse::Skipped);
+        assert_ne!(response.unwrap(), HandlerResponse::Skipped);
     }
 }

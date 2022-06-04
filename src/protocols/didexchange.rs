@@ -5,6 +5,7 @@ use did_key::KeyPair;
 use did_key::{DIDCore, CONFIG_LD_PUBLIC};
 use didcomm_rs::Message;
 use serde_json::Value;
+use std::error::Error;
 use std::sync::{Arc, Mutex};
 
 #[derive(Default)]
@@ -105,13 +106,13 @@ impl DidcommHandler for DidExchangeHandler {
         request: &Message,
         key: Option<&KeyPair>,
         _connections: Option<&Arc<Mutex<Box<dyn ConnectionStorage>>>>,
-    ) -> HandlerResponse {
+    ) -> Result<HandlerResponse, Box<dyn Error>> {
         if request
             .get_didcomm_header()
             .m_type
             .eq("https://didcomm.org/didexchange/1.0/complete")
         {
-            HandlerResponse::Processed
+            Ok(HandlerResponse::Processed)
         } else if request
             .get_didcomm_header()
             .m_type
@@ -128,9 +129,9 @@ impl DidcommHandler for DidExchangeHandler {
                 .build()
                 .unwrap()
                 .to(&[&did_to]);
-            HandlerResponse::Send(Box::new(response))
+            Ok(HandlerResponse::Send(Box::new(response)))
         } else {
-            HandlerResponse::Skipped
+            Ok(HandlerResponse::Skipped)
         }
     }
 }
@@ -314,6 +315,6 @@ mod tests {
         );
         let handler = DidExchangeHandler::default();
         let response = handler.handle(&request, Some(&key), None);
-        assert_ne!(response, HandlerResponse::Skipped);
+        assert_ne!(response.unwrap(), HandlerResponse::Skipped);
     }
 }

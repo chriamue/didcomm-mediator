@@ -6,6 +6,7 @@ use crate::message::sign_and_encrypt_message;
 use did_key::KeyPair;
 use didcomm_rs::Message;
 use serde_json::json;
+use std::error::Error;
 use std::sync::{Arc, Mutex};
 
 #[derive(Default)]
@@ -83,7 +84,7 @@ impl DidcommHandler for DiscoverFeaturesHandler {
         request: &Message,
         key: Option<&KeyPair>,
         _connections: Option<&Arc<Mutex<Box<dyn ConnectionStorage>>>>,
-    ) -> HandlerResponse {
+    ) -> Result<HandlerResponse, Box<dyn Error>> {
         if request
             .get_didcomm_header()
             .m_type
@@ -95,9 +96,11 @@ impl DidcommHandler for DiscoverFeaturesHandler {
                 .unwrap();
             let response = sign_and_encrypt_message(request, &response, key.unwrap());
 
-            HandlerResponse::Response(serde_json::to_value(&response).unwrap())
+            Ok(HandlerResponse::Response(
+                serde_json::to_value(&response).unwrap(),
+            ))
         } else {
-            HandlerResponse::Skipped
+            Ok(HandlerResponse::Skipped)
         }
     }
 }
@@ -157,6 +160,6 @@ mod tests {
         );
         let handler = DiscoverFeaturesHandler::default();
         let response = handler.handle(&request, Some(&key), None);
-        assert_ne!(response, HandlerResponse::Skipped);
+        assert_ne!(response.unwrap(), HandlerResponse::Skipped);
     }
 }

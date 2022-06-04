@@ -4,6 +4,7 @@ use crate::handler::{DidcommHandler, HandlerResponse};
 use did_key::KeyPair;
 use didcomm_rs::{AttachmentBuilder, AttachmentDataBuilder, Message};
 use serde_json::{json, Value};
+use std::error::Error;
 use std::sync::{Arc, Mutex};
 
 #[derive(Default)]
@@ -54,7 +55,7 @@ impl DidcommHandler for ForwardHandler {
         request: &Message,
         _key: Option<&KeyPair>,
         _connections: Option<&Arc<Mutex<Box<dyn ConnectionStorage>>>>,
-    ) -> HandlerResponse {
+    ) -> Result<HandlerResponse, Box<dyn Error>> {
         if request
             .get_didcomm_header()
             .m_type
@@ -65,15 +66,15 @@ impl DidcommHandler for ForwardHandler {
                     let body: Value = serde_json::from_str(&request.get_body().unwrap()).unwrap();
                     let did_to = body["next"].as_str().unwrap();
                     let response_json = attachment.data.json.as_ref().unwrap();
-                    HandlerResponse::Forward(
+                    Ok(HandlerResponse::Forward(
                         vec![did_to.to_string()],
                         serde_json::from_str(response_json).unwrap(),
-                    )
+                    ))
                 }
-                _ => HandlerResponse::Processed,
+                _ => Ok(HandlerResponse::Processed),
             }
         } else {
-            HandlerResponse::Skipped
+            Ok(HandlerResponse::Skipped)
         }
     }
 }

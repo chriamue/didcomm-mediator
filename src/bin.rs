@@ -93,9 +93,9 @@ fn didcomm_endpoint(
 
     for handler in handlers {
         match handler.handle(&received, Some(key), Some(connections)) {
-            HandlerResponse::Skipped => {}
-            HandlerResponse::Processed => {}
-            HandlerResponse::Forward(receivers, message) => {
+            Ok(HandlerResponse::Skipped) => {}
+            Ok(HandlerResponse::Processed) => {}
+            Ok(HandlerResponse::Forward(receivers, message)) => {
                 for receiver in receivers {
                     let forward = ForwardBuilder::new()
                         .did(receiver.to_string())
@@ -106,11 +106,12 @@ fn didcomm_endpoint(
                     locked_connections.insert_message_for(forward, receiver.to_string());
                 }
             }
-            HandlerResponse::Send(message) => {
+            Ok(HandlerResponse::Send(message)) => {
                 let mut locked_connections = connections.try_lock().unwrap();
                 locked_connections.insert_message(*message);
             }
-            HandlerResponse::Response(product) => return Json(product),
+            Ok(HandlerResponse::Response(product)) => return Json(product),
+            Err(_) => {}
         }
     }
     Json(serde_json::json!({}))

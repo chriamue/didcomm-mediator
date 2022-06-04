@@ -5,6 +5,7 @@ use crate::message::sign_and_encrypt_message;
 use did_key::KeyPair;
 use did_key::{DIDCore, CONFIG_LD_PUBLIC};
 use didcomm_rs::{AttachmentBuilder, AttachmentDataBuilder, Message};
+use std::error::Error;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
@@ -158,7 +159,7 @@ impl DidcommHandler for MessagePickupHandler {
         request: &Message,
         key: Option<&KeyPair>,
         connections: Option<&Arc<Mutex<Box<dyn ConnectionStorage>>>>,
-    ) -> HandlerResponse {
+    ) -> Result<HandlerResponse, Box<dyn Error>> {
         if request
             .get_didcomm_header()
             .m_type
@@ -173,9 +174,11 @@ impl DidcommHandler for MessagePickupHandler {
                 .unwrap();
             let response = sign_and_encrypt_message(request, &response, key.unwrap());
 
-            HandlerResponse::Response(serde_json::to_value(&response).unwrap())
+            Ok(HandlerResponse::Response(
+                serde_json::to_value(&response).unwrap(),
+            ))
         } else {
-            HandlerResponse::Skipped
+            Ok(HandlerResponse::Skipped)
         }
     }
 }
@@ -334,6 +337,6 @@ mod tests {
             Some(&key),
             Some(&Arc::new(Mutex::new(Box::new(Connections::default())))),
         );
-        assert_ne!(response, HandlerResponse::Skipped);
+        assert_ne!(response.unwrap(), HandlerResponse::Skipped);
     }
 }
