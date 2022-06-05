@@ -130,9 +130,8 @@ impl DidcommHandler for DidExchangeHandler {
                 .did(did)
                 .did_doc(serde_json::to_value(&did_doc).unwrap())
                 .build()
-                .unwrap()
-                .to(&[&did_to]);
-            Ok(HandlerResponse::Send(Box::new(response)))
+                .unwrap();
+            Ok(HandlerResponse::Send(did_to, Box::new(response)))
         } else {
             Ok(HandlerResponse::Skipped)
         }

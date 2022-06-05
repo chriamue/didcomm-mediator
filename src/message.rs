@@ -3,7 +3,7 @@ use didcomm_rs::{
     crypto::{CryptoAlgorithm, SignatureAlgorithm},
     Message,
 };
-use serde_json::Value;
+use serde_json::{json, Value};
 
 pub fn sign_and_encrypt_message(
     request: &Message,
@@ -45,6 +45,31 @@ pub fn sign_and_encrypt(
     Ok(serde_json::from_str(&ready_to_send).unwrap())
 }
 
+pub fn add_return_route_all_header(message: Message) -> Message {
+    message.add_header_field(
+        "~transport".to_string(),
+        serde_json::to_string(&json!({
+            "return_route": "all".to_string()
+        }))
+        .unwrap(),
+    )
+}
+
+pub fn has_return_route_all_header(message: &Message) -> bool {
+    match message
+        .get_application_params()
+        .find(|(key, _)| *key == "~transport")
+    {
+        Some((_, transport)) => {
+            serde_json::from_str::<Value>(transport).unwrap()
+                == json!({
+                    "return_route": "all".to_string()
+                })
+        }
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -79,5 +104,13 @@ mod tests {
         let sample_body: Value = serde_json::from_str(body).unwrap();
         let received_body: Value = serde_json::from_str(&received.get_body().unwrap()).unwrap();
         assert_eq!(sample_body.to_string(), received_body.to_string(),);
+    }
+
+    #[test]
+    fn test_return_route_all() {
+        let mut message = Message::new();
+        assert!(!has_return_route_all_header(&message));
+        message = add_return_route_all_header(message);
+        assert!(has_return_route_all_header(&message));
     }
 }

@@ -11,7 +11,7 @@ use std::sync::Arc;
 pub enum HandlerResponse {
     Skipped,
     Processed,
-    Send(Box<Message>),
+    Send(String, Box<Message>),
     Forward(Vec<String>, Value),
     Response(Value),
 }

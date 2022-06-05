@@ -76,12 +76,12 @@ impl DidcommHandler for TrustPingHandler {
             .m_type
             .starts_with("https://didcomm.org/trust-ping/2.0/")
         {
+            let did_to = request.get_didcomm_header().from.clone().unwrap();
             let response = TrustPingResponseBuilder::new()
                 .message(request.clone())
                 .build()
-                .unwrap()
-                .to(&[request.get_didcomm_header().from.as_ref().unwrap()]);
-            Ok(HandlerResponse::Send(Box::new(response)))
+                .unwrap();
+            Ok(HandlerResponse::Send(did_to, Box::new(response)))
         } else {
             Ok(HandlerResponse::Skipped)
         }

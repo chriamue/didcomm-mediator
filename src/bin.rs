@@ -9,6 +9,7 @@ use didcomm_mediator::config::Config;
 use didcomm_mediator::connections::{ConnectionStorage, Connections};
 use didcomm_mediator::handler::{DidcommHandler, HandlerResponse};
 use didcomm_mediator::invitation::{Invitation, InvitationResponse};
+use didcomm_mediator::message::{has_return_route_all_header, sign_and_encrypt};
 use didcomm_mediator::protocols::didexchange::DidExchangeHandler;
 use didcomm_mediator::protocols::discoverfeatures::DiscoverFeaturesHandler;
 use didcomm_mediator::protocols::forward::ForwardBuilder;
@@ -120,10 +121,19 @@ async fn didcomm_endpoint(
                     drop(locked_connections);
                 }
             }
-            HandlerResponse::Send(message) => {
-                let mut locked_connections = connections.try_lock().unwrap();
-                locked_connections.insert_message(*message).await;
-            }
+            HandlerResponse::Send(to, message) => match has_return_route_all_header(&received) {
+                true => {
+                    let response = match sign_and_encrypt(&message, &to, key) {
+                        Ok(response) => response,
+                        Err(error) => serde_json::to_value(error.to_string()).unwrap(),
+                    };
+                    return Ok(Json(response));
+                }
+                false => {
+                    let mut locked_connections = connections.try_lock().unwrap();
+                    locked_connections.insert_message_for(*message, to).await;
+                }
+            },
             HandlerResponse::Response(product) => return Ok(Json(product)),
         }
     }
@@ -197,6 +207,7 @@ fn rocket() -> _ {
 mod main_tests {
     use super::*;
     use did_key::Ed25519KeyPair;
+    use didcomm_mediator::message::add_return_route_all_header;
     use didcomm_mediator::message::sign_and_encrypt;
     use didcomm_mediator::protocols::didexchange::DidExchangeResponseBuilder;
     use didcomm_mediator::protocols::messagepickup::MessagePickupResponseBuilder;
@@ -384,6 +395,9 @@ mod main_tests {
         assert!(&received.is_ok());
         let message: Message = received.unwrap();
 
+
+        println!("{:?}", message);
+
         for attachment in message.get_attachments() {
             let response_json = attachment.data.json.as_ref().unwrap();
             let received =
@@ -391,6 +405,63 @@ mod main_tests {
             println!("message {:?}", received);
         }
         assert!(message.get_attachments().next().is_some());
+    }
+
+    #[test]
+    fn test_return_route() {
+        let rocket = rocket();
+        let client = Client::tracked(rocket).unwrap();
+        let req = client.get("/invitation");
+        let response = req.dispatch();
+        assert_eq!(response.status(), Status::Ok);
+        let invitation_response: InvitationResponse = response.into_json().unwrap();
+        let invitation = invitation_response.invitation;
+        let recipient_did = invitation.services[0].recipient_keys[0].to_string();
+        let recipient_key = did_key::resolve(&recipient_did).unwrap();
+
+        let key = generate::<X25519KeyPair>(None);
+        let sign_key = generate::<Ed25519KeyPair>(None);
+        let did_doc = key.get_did_document(CONFIG_JOSE_PUBLIC);
+        let did_from = did_doc.id;
+
+        let mut message = TrustPingResponseBuilder::new().build().unwrap();
+
+        message = add_return_route_all_header(message);
+
+        message = message
+            .from(&did_from)
+            .to(&[&recipient_did])
+            .as_jwe(
+                &CryptoAlgorithm::XC20P,
+                Some(recipient_key.public_key_bytes()),
+            )
+            .kid(&hex::encode(sign_key.public_key_bytes()));
+
+        let ready_to_send = message
+            .seal_signed(
+                &key.private_key_bytes(),
+                Some(vec![Some(recipient_key.public_key_bytes())]),
+                SignatureAlgorithm::EdDsa,
+                &[sign_key.private_key_bytes(), sign_key.public_key_bytes()].concat(),
+            )
+            .unwrap();
+
+        let mut req = client.post("/didcomm");
+        req.add_header(ContentType::JSON);
+        let req = req.body(ready_to_send);
+        let response = req.dispatch();
+        assert_eq!(response.status(), Status::Ok);
+
+        let response_json = response.into_string().unwrap();
+        let received = Message::receive(&response_json, Some(&key.private_key_bytes()), None, None);
+
+        assert!(&received.is_ok());
+        let message: Message = received.unwrap();
+
+        assert_eq!(
+            message.get_didcomm_header().m_type,
+            "https://didcomm.org/trust-ping/2.0/ping-response"
+        );
     }
 
     #[test]
