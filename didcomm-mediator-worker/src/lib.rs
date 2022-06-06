@@ -6,11 +6,13 @@ use didcomm_mediator::connections::ConnectionStorage;
 use didcomm_mediator::invitation::Invitation;
 use serde_json::{json, Value};
 use std::sync::Arc;
+use wasm_bindgen::prelude::*;
 use worker::*;
-mod connections;
-mod utils;
+pub mod connections;
+pub mod utils;
 use async_mutex::Mutex;
 use didcomm_mediator::handler::{DidcommHandler, HandlerResponse};
+use didcomm_mediator::message::{has_return_route_all_header, sign_and_encrypt};
 use didcomm_mediator::protocols::didexchange::DidExchangeHandler;
 use didcomm_mediator::protocols::discoverfeatures::DiscoverFeaturesHandler;
 use didcomm_mediator::protocols::forward::ForwardBuilder;
@@ -27,6 +29,17 @@ fn log_request(req: &Request) {
         req.cf().coordinates().unwrap_or_default(),
         req.cf().region().unwrap_or("unknown region".into())
     );
+}
+
+#[wasm_bindgen]
+extern "C" {
+    type KV;
+
+    #[wasm_bindgen(static_method_of = KV)]
+    pub async fn get(s: String) -> JsValue;
+
+    #[wasm_bindgen(static_method_of = KV)]
+    pub async fn put(key: String, value: JsValue);
 }
 
 // source: https://github.com/rodneylab/hcaptcha-serverless-rust-worker/blob/main/src/lib.rs
@@ -112,12 +125,6 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
             headers.set("Access-Control-Allow-Headers", "*")?;
             headers.set("Access-Control-Allow-Credentials", "true")?;
 
-            let kv = match connections::kv() {
-                Ok(kv) => Some(kv),
-                _ => None,
-            };
-            console_log!("{:?}", kv.is_some());
-
             let received =
                 match Message::receive(&body_str, Some(&key.private_key_bytes()), None, None) {
                     Ok(received) => received,
@@ -147,12 +154,31 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
                                 .build()
                                 .unwrap();
                             let mut locked_connections = connections.try_lock().unwrap();
-                            locked_connections.insert_message_for(forward, receiver.to_string()).await;
+                            locked_connections
+                                .insert_message_for(forward, receiver.to_string())
+                                .await;
                         }
                     }
-                    Ok(HandlerResponse::Send(message)) => {
-                        let mut locked_connections = connections.try_lock().unwrap();
-                        locked_connections.insert_message(*message).await;
+                    Ok(HandlerResponse::Send(to, message)) => {
+                        match has_return_route_all_header(&received) {
+                            true => {
+                                let response = match sign_and_encrypt(
+                                    &message,
+                                    &key.get_did_document(Default::default()).id,
+                                    &to,
+                                    &key,
+                                ) {
+                                    Ok(response) => response,
+                                    Err(error) => serde_json::to_value(error.to_string()).unwrap(),
+                                };
+                                let response = Response::from_json(&json!(response)).unwrap();
+                                return Ok(response.with_headers(headers));
+                            }
+                            false => {
+                                let mut locked_connections = connections.try_lock().unwrap();
+                                locked_connections.insert_message_for(*message, to).await;
+                            }
+                        }
                     }
                     Ok(HandlerResponse::Response(product)) => {
                         let response = Response::from_json(&product).unwrap();
