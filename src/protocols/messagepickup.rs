@@ -117,7 +117,7 @@ impl<'a> MessagePickupResponseBuilder<'a> {
         let messages = {
             let mut connections = self.connections.unwrap().try_lock().unwrap();
             let messages = connections.get_messages(did_from, batch_size).await;
-            messages.clone()
+            messages
         };
 
         let batch: Message = match messages {
@@ -162,7 +162,7 @@ impl DidcommHandler for MessagePickupHandler {
         key: Option<&KeyPair>,
         connections: Option<&Arc<Mutex<Box<dyn ConnectionStorage>>>>,
     ) -> Result<HandlerResponse, Box<dyn Error>> {
-        let key = key.clone().unwrap();
+        let key = key.unwrap();
         let did = key.get_did_document(CONFIG_LD_PUBLIC).id;
         match request
             .get_didcomm_header()

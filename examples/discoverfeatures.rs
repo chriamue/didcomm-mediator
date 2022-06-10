@@ -1,4 +1,4 @@
-use did_key::{generate, KeyMaterial, DIDCore, X25519KeyPair};
+use did_key::{generate, DIDCore, KeyMaterial, X25519KeyPair};
 use didcomm_mediator::invitation::InvitationResponse;
 use didcomm_mediator::message::sign_and_encrypt;
 use didcomm_mediator::protocols::discoverfeatures::DiscoverFeaturesResponseBuilder;
@@ -26,7 +26,13 @@ async fn main() {
 
     let request = DiscoverFeaturesResponseBuilder::new().build().unwrap();
 
-    let request = sign_and_encrypt(&request, &key.get_did_document(Default::default()).id, did_to, &key).unwrap();
+    let request = sign_and_encrypt(
+        &request,
+        &key.get_did_document(Default::default()).id,
+        did_to,
+        &key,
+    )
+    .unwrap();
 
     let client = reqwest::Client::new();
     let res = client

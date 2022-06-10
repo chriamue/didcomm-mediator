@@ -123,7 +123,12 @@ async fn didcomm_endpoint(
             }
             HandlerResponse::Send(to, message) => match has_return_route_all_header(&received) {
                 true => {
-                    let response = match sign_and_encrypt(&message, &key.get_did_document(Default::default()).id, &to, key) {
+                    let response = match sign_and_encrypt(
+                        &message,
+                        &key.get_did_document(Default::default()).id,
+                        &to,
+                        key,
+                    ) {
                         Ok(response) => response,
                         Err(error) => serde_json::to_value(error.to_string()).unwrap(),
                     };
@@ -381,7 +386,13 @@ mod main_tests {
             .batch_size(10)
             .build_batch_pickup()
             .unwrap();
-        let request = sign_and_encrypt(&request, &key.get_did_document(Default::default()).id, &recipient_did, &key).unwrap();
+        let request = sign_and_encrypt(
+            &request,
+            &key.get_did_document(Default::default()).id,
+            &recipient_did,
+            &key,
+        )
+        .unwrap();
 
         let mut req = client.post("/didcomm");
         req.add_header(ContentType::JSON);
@@ -490,7 +501,13 @@ mod main_tests {
             .unwrap()
             .from(&did_from);
 
-        let request = sign_and_encrypt(&request, &key.get_did_document(Default::default()).id, &recipient_did, &key).unwrap();
+        let request = sign_and_encrypt(
+            &request,
+            &key.get_did_document(Default::default()).id,
+            &recipient_did,
+            &key,
+        )
+        .unwrap();
 
         let mut req = client.post("/didcomm");
         req.add_header(ContentType::JSON);
@@ -503,7 +520,13 @@ mod main_tests {
             .batch_size(10)
             .build_batch_pickup()
             .unwrap();
-        let request = sign_and_encrypt(&request, &key.get_did_document(Default::default()).id, &recipient_did, &key).unwrap();
+        let request = sign_and_encrypt(
+            &request,
+            &key.get_did_document(Default::default()).id,
+            &recipient_did,
+            &key,
+        )
+        .unwrap();
 
         let mut req = client.post("/didcomm");
         req.add_header(ContentType::JSON);
@@ -548,14 +571,26 @@ mod main_tests {
 
         let ping_request = TrustPingResponseBuilder::new().build().unwrap();
 
-        let ping_request = sign_and_encrypt(&ping_request, &alice_key.get_did_document(Default::default()).id, &bob_did, &alice_key).unwrap();
+        let ping_request = sign_and_encrypt(
+            &ping_request,
+            &alice_key.get_did_document(Default::default()).id,
+            &bob_did,
+            &alice_key,
+        )
+        .unwrap();
 
         let request = ForwardBuilder::new()
             .message(serde_json::to_string(&ping_request).unwrap())
             .did(bob_did.to_string())
             .build()
             .unwrap();
-        let request = sign_and_encrypt(&request, &alice_key.get_did_document(Default::default()).id, &mediator_did, &alice_key).unwrap();
+        let request = sign_and_encrypt(
+            &request,
+            &alice_key.get_did_document(Default::default()).id,
+            &mediator_did,
+            &alice_key,
+        )
+        .unwrap();
 
         let mut req = client.post("/didcomm");
         req.add_header(ContentType::JSON);
@@ -568,7 +603,12 @@ mod main_tests {
             .batch_size(10)
             .build_batch_pickup()
             .unwrap();
-        let request = sign_and_encrypt(&request, &bob_key.get_did_document(Default::default()).id, &mediator_did, &bob_key);
+        let request = sign_and_encrypt(
+            &request,
+            &bob_key.get_did_document(Default::default()).id,
+            &mediator_did,
+            &bob_key,
+        );
 
         let mut req = client.post("/didcomm");
         req.add_header(ContentType::JSON);

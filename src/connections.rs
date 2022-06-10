@@ -109,10 +109,7 @@ impl ConnectionStorage for Connections {
     }
 
     async fn get(&self, did: String) -> Option<Connection> {
-        match self.connections.get(&did) {
-            None => None,
-            Some(connection) => Some(connection.clone()),
-        }
+        self.connections.get(&did).cloned()
     }
 }
 

@@ -4,7 +4,6 @@ use didcomm_rs::{
     Message,
 };
 use serde_json::{json, Value};
-use crate::keybytes::KeyBytes;
 
 pub fn sign_and_encrypt_message(
     request: &Message,
@@ -12,7 +11,12 @@ pub fn sign_and_encrypt_message(
     key: &KeyPair,
 ) -> Result<Value, Box<dyn std::error::Error>> {
     let recipient_did = request.get_didcomm_header().from.as_ref().unwrap();
-    sign_and_encrypt(response, &key.get_did_document(Default::default()).id, recipient_did, key)
+    sign_and_encrypt(
+        response,
+        &key.get_did_document(Default::default()).id,
+        recipient_did,
+        key,
+    )
 }
 
 pub fn sign_and_encrypt(
