@@ -26,7 +26,6 @@ base58 = "0.2.0"
 chrono = "0.4"
 did-key = "*"
 didcomm-rs = { version = "0.7.2", git = "https://github.com/decentralized-identity/didcomm-rs" }
-ddoresolver-rs = { version = "0.4" }
 ed25519-dalek = { version = "1.0" }
 hex = { version = "0.4.3", features = ["serde"] }
 identity = { git = "https://github.com/iotaledger/identity.rs", branch = "dev", features = [

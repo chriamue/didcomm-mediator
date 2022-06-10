@@ -9,6 +9,7 @@ use didcomm_mediator::config::Config;
 use didcomm_mediator::connections::{ConnectionStorage, Connections};
 use didcomm_mediator::handler::{DidcommHandler, HandlerResponse};
 use didcomm_mediator::invitation::{Invitation, InvitationResponse};
+use didcomm_mediator::message::receive;
 use didcomm_mediator::message::{has_return_route_all_header, sign_and_encrypt};
 use didcomm_mediator::protocols::didexchange::DidExchangeHandler;
 use didcomm_mediator::protocols::discoverfeatures::DiscoverFeaturesHandler;
@@ -16,7 +17,6 @@ use didcomm_mediator::protocols::forward::ForwardBuilder;
 use didcomm_mediator::protocols::forward::ForwardHandler;
 use didcomm_mediator::protocols::messagepickup::MessagePickupHandler;
 use didcomm_mediator::protocols::trustping::TrustPingHandler;
-use didcomm_rs::Message;
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::http::{Header, Status};
 use rocket::{response::Redirect, serde::json::Json, State};
@@ -83,7 +83,7 @@ async fn didcomm_endpoint(
     let body_str = serde_json::to_string(&body.into_inner()).unwrap();
     let connections: &Arc<Mutex<Box<dyn ConnectionStorage>>> = connections;
 
-    let received = match Message::receive(&body_str, Some(&key.private_key_bytes()), None, None) {
+    let received = match receive(&body_str, Some(&key.private_key_bytes()), None, None).await {
         Ok(received) => received,
         Err(_) => return Err(Status::BadRequest),
     };
@@ -128,7 +128,9 @@ async fn didcomm_endpoint(
                         &key.get_did_document(Default::default()).id,
                         &to,
                         key,
-                    ) {
+                    )
+                    .await
+                    {
                         Ok(response) => response,
                         Err(error) => serde_json::to_value(error.to_string()).unwrap(),
                     };
@@ -218,45 +220,46 @@ mod main_tests {
     use didcomm_mediator::protocols::messagepickup::MessagePickupResponseBuilder;
     use didcomm_mediator::protocols::trustping::TrustPingResponseBuilder;
     use didcomm_rs::crypto::{CryptoAlgorithm, SignatureAlgorithm};
+    use didcomm_rs::Message;
     use rocket::http::{ContentType, Status};
-    use rocket::local::blocking::Client;
+    use rocket::local::asynchronous::Client;
 
-    #[test]
-    fn test_invitation_endpoint() {
+    #[tokio::test]
+    async fn test_invitation_endpoint() {
         let rocket = rocket();
-        let client = Client::tracked(rocket).unwrap();
+        let client = Client::tracked(rocket).await.unwrap();
         let req = client.get("/invitation");
-        let response = req.dispatch();
+        let response = req.dispatch().await;
         assert_eq!(response.status(), Status::Ok);
-        let invitation_response: InvitationResponse = response.into_json().unwrap();
+        let invitation_response: InvitationResponse = response.into_json().await.unwrap();
         assert_eq!(
             invitation_response.invitation.services[0].typ,
             "did-communication"
         );
     }
 
-    #[test]
-    fn test_oob_invitation_endpoint() {
+    #[tokio::test]
+    async fn test_oob_invitation_endpoint() {
         let rocket = rocket();
-        let client = Client::tracked(rocket).unwrap();
+        let client = Client::tracked(rocket).await.unwrap();
         let req = client.post("/outofband/create-invitation");
-        let response = req.dispatch();
+        let response = req.dispatch().await;
         assert_eq!(response.status(), Status::Ok);
-        let invitation_response: InvitationResponse = response.into_json().unwrap();
+        let invitation_response: InvitationResponse = response.into_json().await.unwrap();
         assert_eq!(
             invitation_response.invitation.services[0].typ,
             "did-communication"
         );
     }
 
-    #[test]
-    fn test_didcomm_endpoint() {
+    #[tokio::test]
+    async fn test_didcomm_endpoint() {
         let rocket = rocket();
-        let client = Client::tracked(rocket).unwrap();
+        let client = Client::tracked(rocket).await.unwrap();
         let req = client.get("/invitation");
-        let response = req.dispatch();
+        let response = req.dispatch().await;
         assert_eq!(response.status(), Status::Ok);
-        let invitation_response: InvitationResponse = response.into_json().unwrap();
+        let invitation_response: InvitationResponse = response.into_json().await.unwrap();
         let invitation = invitation_response.invitation;
         let recipient_did = invitation.services[0].recipient_keys[0].to_string();
         let recipient_key = did_key::resolve(&recipient_did).unwrap();
@@ -290,17 +293,17 @@ mod main_tests {
         req.add_header(ContentType::JSON);
         let req = req.body(ready_to_send);
         let response = req.dispatch();
-        assert_eq!(response.status(), Status::Ok);
+        assert_eq!(response.await.status(), Status::Ok);
     }
 
-    #[test]
-    fn test_didcomm_wrong_key() {
+    #[tokio::test]
+    async fn test_didcomm_wrong_key() {
         let rocket = rocket();
-        let client = Client::tracked(rocket).unwrap();
+        let client = Client::tracked(rocket).await.unwrap();
         let req = client.get("/invitation");
-        let response = req.dispatch();
+        let response = req.dispatch().await;
         assert_eq!(response.status(), Status::Ok);
-        let invitation_response: InvitationResponse = response.into_json().unwrap();
+        let invitation_response: InvitationResponse = response.into_json().await.unwrap();
         let invitation = invitation_response.invitation;
         let recipient_did = invitation.services[0].recipient_keys[0].to_string();
         let recipient_key = did_key::resolve(&recipient_did).unwrap();
@@ -335,17 +338,17 @@ mod main_tests {
         req.add_header(ContentType::JSON);
         let req = req.body(ready_to_send);
         let response = req.dispatch();
-        assert_eq!(response.status(), Status::BadRequest);
+        assert_eq!(response.await.status(), Status::BadRequest);
     }
 
-    #[test]
-    fn test_trust_ping() {
+    #[tokio::test]
+    async fn test_trust_ping() {
         let rocket = rocket();
-        let client = Client::tracked(rocket).unwrap();
+        let client = Client::tracked(rocket).await.unwrap();
         let req = client.get("/invitation");
-        let response = req.dispatch();
+        let response = req.dispatch().await;
         assert_eq!(response.status(), Status::Ok);
-        let invitation_response: InvitationResponse = response.into_json().unwrap();
+        let invitation_response: InvitationResponse = response.into_json().await.unwrap();
         let invitation = invitation_response.invitation;
         let recipient_did = invitation.services[0].recipient_keys[0].to_string();
         let recipient_key = did_key::resolve(&recipient_did).unwrap();
@@ -379,7 +382,7 @@ mod main_tests {
         req.add_header(ContentType::JSON);
         let req = req.body(ready_to_send);
         let response = req.dispatch();
-        assert_eq!(response.status(), Status::Ok);
+        assert_eq!(response.await.status(), Status::Ok);
 
         let request = MessagePickupResponseBuilder::new()
             .did(did_from.to_string())
@@ -392,15 +395,16 @@ mod main_tests {
             &recipient_did,
             &key,
         )
+        .await
         .unwrap();
 
         let mut req = client.post("/didcomm");
         req.add_header(ContentType::JSON);
         let req = req.body(serde_json::to_string(&request).unwrap());
-        let response = req.dispatch();
+        let response = req.dispatch().await;
         assert_eq!(response.status(), Status::Ok);
 
-        let response_json = response.into_string().unwrap();
+        let response_json = response.into_string().await.unwrap();
         let received = Message::receive(&response_json, Some(&key.private_key_bytes()), None, None);
 
         assert!(&received.is_ok());
@@ -417,14 +421,14 @@ mod main_tests {
         assert!(message.get_attachments().next().is_some());
     }
 
-    #[test]
-    fn test_return_route() {
+    #[tokio::test]
+    async fn test_return_route() {
         let rocket = rocket();
-        let client = Client::tracked(rocket).unwrap();
+        let client = Client::tracked(rocket).await.unwrap();
         let req = client.get("/invitation");
-        let response = req.dispatch();
+        let response = req.dispatch().await;
         assert_eq!(response.status(), Status::Ok);
-        let invitation_response: InvitationResponse = response.into_json().unwrap();
+        let invitation_response: InvitationResponse = response.into_json().await.unwrap();
         let invitation = invitation_response.invitation;
         let recipient_did = invitation.services[0].recipient_keys[0].to_string();
         let recipient_key = did_key::resolve(&recipient_did).unwrap();
@@ -459,10 +463,10 @@ mod main_tests {
         let mut req = client.post("/didcomm");
         req.add_header(ContentType::JSON);
         let req = req.body(ready_to_send);
-        let response = req.dispatch();
+        let response = req.dispatch().await;
         assert_eq!(response.status(), Status::Ok);
 
-        let response_json = response.into_string().unwrap();
+        let response_json = response.into_string().await.unwrap();
         let received = Message::receive(&response_json, Some(&key.private_key_bytes()), None, None);
 
         assert!(&received.is_ok());
@@ -474,14 +478,14 @@ mod main_tests {
         );
     }
 
-    #[test]
-    fn test_did_exchange() {
+    #[tokio::test]
+    async fn test_did_exchange() {
         let rocket = rocket();
-        let client = Client::tracked(rocket).unwrap();
+        let client = Client::tracked(rocket).await.unwrap();
         let req = client.get("/invitation");
-        let response = req.dispatch();
+        let response = req.dispatch().await;
         assert_eq!(response.status(), Status::Ok);
-        let invitation_response: InvitationResponse = response.into_json().unwrap();
+        let invitation_response: InvitationResponse = response.into_json().await.unwrap();
         let invitation = invitation_response.invitation;
         let recipient_did = invitation.services[0].recipient_keys[0].to_string();
 
@@ -507,13 +511,14 @@ mod main_tests {
             &recipient_did,
             &key,
         )
+        .await
         .unwrap();
 
         let mut req = client.post("/didcomm");
         req.add_header(ContentType::JSON);
         let req = req.body(serde_json::to_string(&request).unwrap());
         let response = req.dispatch();
-        assert_eq!(response.status(), Status::Ok);
+        assert_eq!(response.await.status(), Status::Ok);
 
         let request = MessagePickupResponseBuilder::new()
             .did(did_from.to_string())
@@ -526,15 +531,16 @@ mod main_tests {
             &recipient_did,
             &key,
         )
+        .await
         .unwrap();
 
         let mut req = client.post("/didcomm");
         req.add_header(ContentType::JSON);
         let req = req.body(serde_json::to_string(&request).unwrap());
-        let response = req.dispatch();
+        let response = req.dispatch().await;
         assert_eq!(response.status(), Status::Ok);
 
-        let response_json = response.into_string().unwrap();
+        let response_json = response.into_string().await.unwrap();
         let received = Message::receive(&response_json, Some(&key.private_key_bytes()), None, None);
 
         assert!(&received.is_ok());
@@ -549,14 +555,14 @@ mod main_tests {
         assert!(message.get_attachments().next().is_some());
     }
 
-    #[test]
-    fn test_forward() {
+    #[tokio::test]
+    async fn test_forward() {
         let rocket = rocket();
-        let client = Client::tracked(rocket).unwrap();
+        let client = Client::tracked(rocket).await.unwrap();
         let req = client.get("/invitation");
-        let response = req.dispatch();
+        let response = req.dispatch().await;
         assert_eq!(response.status(), Status::Ok);
-        let invitation_response: InvitationResponse = response.into_json().unwrap();
+        let invitation_response: InvitationResponse = response.into_json().await.unwrap();
         let invitation = invitation_response.invitation;
         let mediator_did = invitation.services[0].recipient_keys[0].to_string();
 
@@ -577,6 +583,7 @@ mod main_tests {
             &bob_did,
             &alice_key,
         )
+        .await
         .unwrap();
 
         let request = ForwardBuilder::new()
@@ -590,33 +597,32 @@ mod main_tests {
             &mediator_did,
             &alice_key,
         )
+        .await
         .unwrap();
 
         let mut req = client.post("/didcomm");
         req.add_header(ContentType::JSON);
         let req = req.body(serde_json::to_string(&request).unwrap());
         let response = req.dispatch();
-        assert_eq!(response.status(), Status::Ok);
+        assert_eq!(response.await.status(), Status::Ok);
 
         let request = MessagePickupResponseBuilder::new()
             .did(bob_did.to_string())
             .batch_size(10)
             .build_batch_pickup()
             .unwrap();
-        let request = sign_and_encrypt(
-            &request,
-            &bob_key.get_did_document(Default::default()).id,
-            &mediator_did,
-            &bob_key,
-        );
+        let did_from = bob_key.get_did_document(Default::default()).id;
+        let request = sign_and_encrypt(&request, &did_from, &mediator_did, &bob_key)
+            .await
+            .unwrap();
 
         let mut req = client.post("/didcomm");
         req.add_header(ContentType::JSON);
-        let req = req.body(serde_json::to_string(&request.unwrap()).unwrap());
-        let response = req.dispatch();
+        let req = req.body(serde_json::to_string(&request).unwrap());
+        let response = req.dispatch().await;
         assert_eq!(response.status(), Status::Ok);
 
-        let response_json = response.into_string().unwrap();
+        let response_json = response.into_string().await.unwrap();
         let received = Message::receive(
             &response_json,
             Some(&bob_key.private_key_bytes()),

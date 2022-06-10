@@ -43,6 +43,7 @@ async fn main() {
         did_to,
         &key,
     )
+    .await
     .unwrap();
 
     let client = reqwest::Client::new();

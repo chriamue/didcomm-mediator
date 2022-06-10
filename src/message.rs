@@ -1,25 +1,30 @@
+use crate::resolver::resolve;
 use did_key::{generate, DIDCore, Ed25519KeyPair, KeyMaterial, KeyPair};
+use didcomm_rs::Jwe;
 use didcomm_rs::{
     crypto::{CryptoAlgorithm, SignatureAlgorithm},
     Message,
 };
 use serde_json::{json, Value};
 
-pub fn sign_and_encrypt_message(
+pub async fn sign_and_encrypt_message(
     request: &Message,
     response: &Message,
     key: &KeyPair,
 ) -> Result<Value, Box<dyn std::error::Error>> {
     let recipient_did = request.get_didcomm_header().from.as_ref().unwrap();
-    sign_and_encrypt(
+    let encrypted = sign_and_encrypt(
         response,
         &key.get_did_document(Default::default()).id,
         recipient_did,
         key,
     )
+    .await
+    .unwrap();
+    Ok(encrypted)
 }
 
-pub fn sign_and_encrypt(
+pub async fn sign_and_encrypt(
     message: &Message,
     did_from: &String,
     did_to: &String,
@@ -27,22 +32,19 @@ pub fn sign_and_encrypt(
 ) -> Result<Value, Box<dyn std::error::Error>> {
     let sign_key = generate::<Ed25519KeyPair>(None);
 
-    let recipient_key = did_key::resolve(did_to).unwrap();
+    let recipient_public_key = resolve(did_to).await.unwrap();
 
     let response = message
         .clone()
         .from(did_from)
         .to(&[did_to])
-        .as_jwe(
-            &CryptoAlgorithm::XC20P,
-            Some(recipient_key.public_key_bytes()),
-        )
+        .as_jwe(&CryptoAlgorithm::XC20P, Some(recipient_public_key.to_vec()))
         .kid(&hex::encode(sign_key.public_key_bytes()));
 
     let ready_to_send = response
         .seal_signed(
             &key.private_key_bytes(),
-            Some(vec![Some(recipient_key.public_key_bytes())]),
+            Some(vec![Some(recipient_public_key)]),
             SignatureAlgorithm::EdDsa,
             &[sign_key.private_key_bytes(), sign_key.public_key_bytes()].concat(),
         )
@@ -75,14 +77,38 @@ pub fn has_return_route_all_header(message: &Message) -> bool {
     }
 }
 
+pub async fn receive(
+    incoming: &str,
+    encryption_recipient_private_key: Option<&[u8]>,
+    encryption_sender_public_key: Option<Vec<u8>>,
+    signing_sender_public_key: Option<&[u8]>,
+) -> Result<Message, didcomm_rs::Error> {
+    let sender_public_key = match &encryption_sender_public_key {
+        Some(value) => value.to_vec(),
+        None => {
+            let jwe: Jwe = serde_json::from_str(incoming)?;
+            let skid = &jwe
+                .get_skid()
+                .ok_or_else(|| didcomm_rs::Error::Generic("skid missing".to_string()))?;
+            resolve(skid).await.unwrap()
+        }
+    };
+    Message::receive(
+        incoming,
+        encryption_recipient_private_key,
+        Some(sender_public_key),
+        signing_sender_public_key,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use base58::FromBase58;
     use did_key::X25519KeyPair;
 
-    #[test]
-    fn test_encrypt_message() {
+    #[tokio::test]
+    async fn test_encrypt_message() {
         let seed_alice = "6QN8DfuN9hjgHgPvLXqgzqYE3jRRGRrmJQZkd5tL8paR";
         let seed_bob = "HBTcN2MrXNRj9xF9oi8QqYyuEPv3JLLjQKuEgW9oxVKP";
 
@@ -98,7 +124,9 @@ mod tests {
         let message = Message::new().body(body);
 
         let jwe_string = serde_json::to_string(
-            &sign_and_encrypt_message(&request, &message, &alice_keypair).unwrap(),
+            &sign_and_encrypt_message(&request, &message, &alice_keypair)
+                .await
+                .unwrap(),
         )
         .unwrap();
 
@@ -117,5 +145,43 @@ mod tests {
         assert!(!has_return_route_all_header(&message));
         message = add_return_route_all_header(message);
         assert!(has_return_route_all_header(&message));
+    }
+
+    #[cfg(feature = "iota")]
+    #[tokio::test]
+    async fn test_iota_message_encryption() -> Result<(), Box<dyn std::error::Error>> {
+        use identity::prelude::KeyPair;
+        use identity::prelude::*;
+
+        let seed = "CLKmgQ7NbRw3MpGu47TiSjQknGf2oBPnW9nFygzBkh9h";
+        let private = seed.from_base58().unwrap();
+
+        let keypair = generate::<X25519KeyPair>(Some(&private));
+        let receiver_keypair_ex =
+            KeyPair::try_from_private_key_bytes(KeyType::X25519, &private).unwrap();
+
+        let did_from = "did:iota:HcFFrR72GJq2hXuwbz2UwE7wkDE2VRkX2NwHeSVroeUH".to_string();
+        let did_to = "did:iota:HcFFrR72GJq2hXuwbz2UwE7wkDE2VRkX2NwHeSVroeUH".to_string();
+
+        let message = Message::new();
+        let message = serde_json::to_string(
+            &sign_and_encrypt(&message, &did_from, &did_to, &keypair)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+
+        println!("{:?}", message);
+
+        let received = receive(
+            &message,
+            Some(&receiver_keypair_ex.private().as_ref()),
+            None,
+            None,
+        )
+        .await;
+        received.unwrap();
+
+        Ok(())
     }
 }

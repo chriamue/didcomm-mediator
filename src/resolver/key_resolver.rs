@@ -1,11 +1,8 @@
-use ddoresolver_rs::*;
+use did_key::KeyMaterial;
 use didcomm_rs::Error;
 
 pub async fn resolve(did: &str) -> Result<Vec<u8>, Error> {
-    let document = ddoresolver_rs::resolve_any(did).ok_or(Error::DidResolveFailed)?;
-    document
-        .find_public_key_for_curve("X25519")
-        .ok_or(Error::BadDid)
+    Ok(did_key::resolve(did).unwrap().public_key_bytes())
 }
 
 #[cfg(test)]

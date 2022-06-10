@@ -185,7 +185,8 @@ impl DidcommHandler for MessagePickupHandler {
 
                 match response {
                     Ok(response) => {
-                        let response = match sign_and_encrypt_message(request, &response, key) {
+                        let response = match sign_and_encrypt_message(request, &response, key).await
+                        {
                             Ok(response) => response,
                             Err(error) => serde_json::to_value(error.to_string()).unwrap(),
                         };
