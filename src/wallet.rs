@@ -1,6 +1,6 @@
 use crate::config::Config;
 use base58::{FromBase58, ToBase58};
-use did_key::{generate, KeyMaterial, KeyPair, X25519KeyPair};
+use did_key::{generate, DIDCore, KeyMaterial, KeyPair, X25519KeyPair};
 #[cfg(feature = "iota")]
 use identity::prelude::*;
 
@@ -30,14 +30,14 @@ impl Wallet {
         }
     }
 
-    pub async fn new_from_config(config: &Config) -> Self {
+    pub async fn new_from_config(config: &Config) -> Result<Self, Box<dyn std::error::Error>> {
         match config.key_seed.clone() {
-            Some(seed) => Wallet {
+            Some(seed) => Ok(Wallet {
                 seed,
                 #[cfg(feature = "iota")]
-                account: Some(Self::load_iota_account(config).await.unwrap()),
-            },
-            _ => Wallet::default(),
+                account: Some(Self::load_iota_account(config).await?),
+            }),
+            _ => Ok(Wallet::default()),
         }
     }
 
@@ -45,9 +45,16 @@ impl Wallet {
         generate::<X25519KeyPair>(Some(&self.seed.from_base58().unwrap()))
     }
 
+    pub fn did_key(&self) -> String {
+        self.keypair().get_did_document(Default::default()).id
+    }
+
     #[cfg(feature = "iota")]
-    pub fn did_iota(&self) -> KeyPair {
-        generate::<X25519KeyPair>(Some(&self.seed.from_base58().unwrap()))
+    pub fn did_iota(&self) -> Option<String> {
+        match &self.account {
+            Some(account) => Some(account.did().to_string()),
+            None => None,
+        }
     }
 
     #[cfg(feature = "iota")]
@@ -57,12 +64,11 @@ impl Wallet {
         use identity::account::Account;
         use identity::account::AutoSave;
         use identity::account::IdentitySetup;
-        use identity::account::MethodContent;
         use identity::account_storage::Stronghold;
         use identity::iota_core::IotaDID;
 
         let account = match (&config.key_seed, &config.did_iota) {
-            (Some(seed), Some(did)) => {
+            (_, Some(did)) => {
                 let did_iota: IotaDID = IotaDID::try_from(did.to_string()).unwrap();
                 Account::builder()
                     .autosave(AutoSave::Every)
@@ -72,15 +78,13 @@ impl Wallet {
                             config.wallet_password.clone().unwrap(),
                             None,
                         )
-                        .await
-                        .unwrap(),
+                        .await?,
                     )
                     .autopublish(true)
                     .load_identity(did_iota)
-                    .await
-                    .unwrap()
+                    .await?
             }
-            (Some(seed), Some(did)) => {
+            (Some(seed), _) => {
                 let private = seed.from_base58().unwrap();
                 let keypair_ed = identity::prelude::KeyPair::try_from_private_key_bytes(
                     KeyType::Ed25519,
@@ -96,34 +100,50 @@ impl Wallet {
                             config.wallet_password.clone().unwrap(),
                             None,
                         )
-                        .await
-                        .unwrap(),
+                        .await?,
                     )
                     .autopublish(true)
                     .create_identity(id_setup)
-                    .await
-                    .unwrap();
+                    .await?;
                 println!("created new identity: {:?}", account.did());
                 account
             }
-            (_, _) => Account::builder()
-                .autosave(AutoSave::Every)
-                .storage(
-                    Stronghold::new(
-                        &config.wallet_path.clone().unwrap(),
-                        config.wallet_password.clone().unwrap(),
-                        None,
+            (_, _) => {
+                Account::builder()
+                    .autosave(AutoSave::Every)
+                    .storage(
+                        Stronghold::new(
+                            &config.wallet_path.clone().unwrap(),
+                            config.wallet_password.clone().unwrap(),
+                            None,
+                        )
+                        .await?,
                     )
-                    .await
-                    .unwrap(),
-                )
-                .autopublish(true)
-                .create_identity(IdentitySetup::default())
-                .await
-                .unwrap(),
+                    .autopublish(true)
+                    .create_identity(IdentitySetup::default())
+                    .await?
+            }
         };
 
         Ok(account)
+    }
+
+    pub fn log(&self) {
+        println!("did key: {}", self.did_key());
+        #[cfg(feature = "iota")]
+        {
+            use identity::iota::ExplorerUrl;
+            let explorer: &ExplorerUrl = ExplorerUrl::mainnet();
+            if self.account.is_some() {
+                println!("did iota: {}", self.account.as_ref().unwrap().did());
+                println!(
+                    "Explore the DID Document = {}",
+                    explorer
+                        .resolver_url(self.account.as_ref().unwrap().did())
+                        .unwrap()
+                );
+            }
+        }
     }
 }
 
@@ -142,14 +162,30 @@ mod tests {
         let wallet1 = Wallet::default();
         let wallet2 = Wallet::new(Some(wallet1.seed.to_string()));
         assert_eq!(wallet1.seed, wallet2.seed);
-
-        let wallet = Wallet::new(None);
-        assert_ne!(wallet.seed, "");
     }
 
     #[test]
     fn test_did_key() {
         let wallet = Wallet::default();
         assert_ne!(wallet.keypair().private_key_bytes(), Vec::<u8>::new());
+    }
+
+    #[tokio::test]
+    async fn test_new_from_config() {
+        let mut config = Config::default();
+        let wallet1 = Wallet::new_from_config(&config).await.unwrap();
+        wallet1.log();
+        config.key_seed = None;
+        let wallet2 = Wallet::new_from_config(&config).await.unwrap();
+
+        #[cfg(feature = "iota")]
+        {
+            assert_eq!(wallet1.did_iota().unwrap(), config.did_iota.unwrap());
+            assert_eq!(wallet2.did_iota(), None);
+            assert_ne!(wallet1.seed, "");
+            let mut config = Config::default();
+            config.did_iota = None;
+            assert!(Wallet::new_from_config(&config).await.is_err());
+        }
     }
 }

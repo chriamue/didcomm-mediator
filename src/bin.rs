@@ -182,7 +182,7 @@ impl Fairing for CORS {
 }
 
 #[launch]
-fn rocket() -> _ {
+async fn rocket() -> _ {
     let rocket = rocket::build();
     let figment = rocket.figment();
     let mut config: Config = figment.extract().expect("loading config");
@@ -190,17 +190,15 @@ fn rocket() -> _ {
         Some(seed) => generate::<X25519KeyPair>(Some(&seed.from_base58().unwrap())),
         None => {
             let key = generate::<X25519KeyPair>(None);
-            println!("Generated Seed: {}", key.private_key_bytes().to_base58());
+            let seed = key.private_key_bytes().to_base58();
+            println!("Generated Seed: {}", seed);
+            config.key_seed = Some(seed);
             key
         }
     };
-    let wallet = Wallet::new(config.key_seed.clone());
-    let did_doc = key.get_did_document(CONFIG_JOSE_PUBLIC);
-    let did_key = did_doc.id;
-
-    println!("did key: {}", did_key);
-
-    config.did_key = Some(did_key);
+    config.did_key = Some(key.get_did_document(Default::default()).id);
+    let wallet = Wallet::new_from_config(&config).await.unwrap();
+    wallet.log();
 
     let connections: Arc<Mutex<Box<dyn ConnectionStorage>>> =
         Arc::new(Mutex::new(Box::new(Connections::new())));
@@ -240,7 +238,7 @@ mod main_tests {
     #[tokio::test]
     async fn test_invitation_endpoint() {
         let rocket = rocket();
-        let client = Client::tracked(rocket).await.unwrap();
+        let client = Client::tracked(rocket.await).await.unwrap();
         let req = client.get("/invitation");
         let response = req.dispatch().await;
         assert_eq!(response.status(), Status::Ok);
@@ -254,7 +252,7 @@ mod main_tests {
     #[tokio::test]
     async fn test_oob_invitation_endpoint() {
         let rocket = rocket();
-        let client = Client::tracked(rocket).await.unwrap();
+        let client = Client::tracked(rocket.await).await.unwrap();
         let req = client.post("/outofband/create-invitation");
         let response = req.dispatch().await;
         assert_eq!(response.status(), Status::Ok);
@@ -268,7 +266,7 @@ mod main_tests {
     #[tokio::test]
     async fn test_didcomm_endpoint() {
         let rocket = rocket();
-        let client = Client::tracked(rocket).await.unwrap();
+        let client = Client::tracked(rocket.await).await.unwrap();
         let req = client.get("/invitation");
         let response = req.dispatch().await;
         assert_eq!(response.status(), Status::Ok);
@@ -312,7 +310,7 @@ mod main_tests {
     #[tokio::test]
     async fn test_didcomm_wrong_key() {
         let rocket = rocket();
-        let client = Client::tracked(rocket).await.unwrap();
+        let client = Client::tracked(rocket.await).await.unwrap();
         let req = client.get("/invitation");
         let response = req.dispatch().await;
         assert_eq!(response.status(), Status::Ok);
@@ -357,7 +355,7 @@ mod main_tests {
     #[tokio::test]
     async fn test_trust_ping() {
         let rocket = rocket();
-        let client = Client::tracked(rocket).await.unwrap();
+        let client = Client::tracked(rocket.await).await.unwrap();
         let req = client.get("/invitation");
         let response = req.dispatch().await;
         assert_eq!(response.status(), Status::Ok);
@@ -437,7 +435,7 @@ mod main_tests {
     #[tokio::test]
     async fn test_return_route() {
         let rocket = rocket();
-        let client = Client::tracked(rocket).await.unwrap();
+        let client = Client::tracked(rocket.await).await.unwrap();
         let req = client.get("/invitation");
         let response = req.dispatch().await;
         assert_eq!(response.status(), Status::Ok);
@@ -494,7 +492,7 @@ mod main_tests {
     #[tokio::test]
     async fn test_did_exchange() {
         let rocket = rocket();
-        let client = Client::tracked(rocket).await.unwrap();
+        let client = Client::tracked(rocket.await).await.unwrap();
         let req = client.get("/invitation");
         let response = req.dispatch().await;
         assert_eq!(response.status(), Status::Ok);
@@ -571,7 +569,7 @@ mod main_tests {
     #[tokio::test]
     async fn test_forward() {
         let rocket = rocket();
-        let client = Client::tracked(rocket).await.unwrap();
+        let client = Client::tracked(rocket.await).await.unwrap();
         let req = client.get("/invitation");
         let response = req.dispatch().await;
         assert_eq!(response.status(), Status::Ok);

@@ -2,6 +2,7 @@
 ident = "mediator"
 key_seed = "4bo9pLUEahsPqerR756HCQ4A9m3fS7WKwUsXru7CSDFd"
 did_key = "did:key:z6MkpFZ86WuUpihn1mTRbpBCGE6YpCvsBYtZQYnd9jcuAUup"
+did_iota = "did:iota:6dgiVE6EhCFqEEBDk6CedUq8aeeqQwQeAVSbZz8PgMzi"
 wallet_path = "wallet.hold.example"
 wallet_password = "changeme"
 
