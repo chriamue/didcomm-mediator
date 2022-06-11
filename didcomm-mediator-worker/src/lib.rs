@@ -77,7 +77,7 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
             let did_doc = key.get_did_document(CONFIG_JOSE_PUBLIC);
             let did = did_doc.id;
             let mut headers = worker::Headers::new();
-            headers.set("Access-Control-Allow-Methods", "POST, GET, PATCH, OPTIONS")?;
+            headers.set("Access-Control-Allow-Methods", "GET")?;
             headers.set("Access-Control-Allow-Origin", "*")?;
             headers.set("Access-Control-Allow-Headers", "*")?;
             headers.set("Access-Control-Allow-Credentials", "true")?;
@@ -113,9 +113,8 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
                 Err(_) => return Response::error("Bad request", 400),
             };
             let body_str = serde_json::to_string(&body).unwrap();
-            let connections: Arc<Mutex<Box<dyn ConnectionStorage>>> = Arc::new(Mutex::new(
-                Box::new(didcomm_mediator::connections::Connections::new()),
-            ));
+            let connections: Arc<Mutex<Box<dyn ConnectionStorage>>> =
+                Arc::new(Mutex::new(Box::new(connections::Connections::new())));
             let seed = ctx.secret("SEED").unwrap().to_string();
             let key = generate::<X25519KeyPair>(Some(&seed.from_base58().unwrap()));
             let mut headers = worker::Headers::new();
@@ -155,7 +154,7 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
                                 .unwrap();
                             let mut locked_connections = connections.try_lock().unwrap();
                             locked_connections
-                                .insert_message_for(forward, receiver.to_string())
+                                .insert_message_for(forward.clone(), receiver.to_string())
                                 .await;
                         }
                     }
@@ -167,7 +166,9 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
                                     &key.get_did_document(Default::default()).id,
                                     &to,
                                     &key,
-                                ) {
+                                )
+                                .await
+                                {
                                     Ok(response) => response,
                                     Err(error) => serde_json::to_value(error.to_string()).unwrap(),
                                 };

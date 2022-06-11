@@ -33,6 +33,9 @@ impl Connection {
     }
 }
 
+unsafe impl Send for Connection {}
+unsafe impl Sync for Connection {}
+
 #[async_trait]
 pub trait ConnectionStorage: Send + Sync {
     async fn insert_message(&mut self, message: Message);
