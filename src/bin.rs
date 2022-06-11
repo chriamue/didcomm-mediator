@@ -2,9 +2,7 @@
 extern crate rocket;
 use async_mutex::Mutex;
 use base58::{FromBase58, ToBase58};
-use did_key::{
-    generate, DIDCore, KeyMaterial, X25519KeyPair, CONFIG_JOSE_PUBLIC, CONFIG_LD_PUBLIC,
-};
+use did_key::{generate, DIDCore, KeyMaterial, X25519KeyPair, CONFIG_LD_PUBLIC};
 use didcomm_mediator::config::Config;
 use didcomm_mediator::connections::{ConnectionStorage, Connections};
 use didcomm_mediator::handler::{DidcommHandler, HandlerResponse};
@@ -39,11 +37,17 @@ fn oob_invitation_endpoint(
     config: &State<Config>,
     wallet: &State<Wallet>,
 ) -> Json<InvitationResponse> {
-    let did_doc = wallet.keypair().get_did_document(CONFIG_JOSE_PUBLIC);
-    let did = did_doc.id;
+    let mut keys: Vec<String> = vec![wallet.did_key()];
+    #[cfg(feature = "iota")]
+    {
+        if wallet.did_iota().is_some() {
+            keys.push(wallet.did_iota().unwrap())
+        }
+    }
+
     let response = InvitationResponse {
         invitation: Invitation::new(
-            did,
+            keys,
             config.ident.to_string(),
             config.ext_service.to_string(),
         ),
@@ -55,7 +59,7 @@ fn oob_invitation_endpoint(
 fn did_web_endpoint(config: &State<Config>, wallet: &State<Wallet>) -> Json<Value> {
     let mut did_doc = wallet.keypair().get_did_document(CONFIG_LD_PUBLIC);
     did_doc.verification_method[0].private_key = None;
-    let did_key = did_doc.id.to_string();
+    let did_key = wallet.did_key();
     let mut did_doc = serde_json::to_value(&did_doc).unwrap();
     did_doc["service"] = serde_json::json!([
       {
@@ -67,10 +71,23 @@ fn did_web_endpoint(config: &State<Config>, wallet: &State<Wallet>) -> Json<Valu
             "didcomm/v2"
         ],
         "recipientKeys": [did_key.to_string()]
-      }],
+      },
+      ],
         "type": "did-communication"
       },
     ]);
+    #[cfg(feature = "iota")]
+    {
+        did_doc["service"][0]["serviceEndpoint"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({"uri": config.ext_service,
+        "accept": [
+            "didcomm/v2"
+        ],
+        "recipientKeys": [wallet.did_iota()]}));
+    }
+
     Json(did_doc)
 }
 
@@ -224,7 +241,7 @@ async fn rocket() -> _ {
 #[cfg(test)]
 mod main_tests {
     use super::*;
-    use did_key::Ed25519KeyPair;
+    use did_key::{Ed25519KeyPair, CONFIG_JOSE_PUBLIC};
     use didcomm_mediator::message::add_return_route_all_header;
     use didcomm_mediator::message::sign_and_encrypt;
     use didcomm_mediator::protocols::didexchange::DidExchangeResponseBuilder;

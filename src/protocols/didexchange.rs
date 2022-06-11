@@ -196,7 +196,7 @@ mod tests {
         let alice_key = generate::<X25519KeyPair>(None);
         let bob_key = generate::<X25519KeyPair>(None);
         let invitation = Invitation::new(
-            "did:key:peer".to_string(),
+            vec!["did:key:peer".to_string()],
             "Alice".to_string(),
             "".to_string(),
         );
@@ -239,7 +239,7 @@ mod tests {
         let alice_key = generate::<X25519KeyPair>(None);
         let bob_key = generate::<X25519KeyPair>(None);
         let invitation = Invitation::new(
-            "did:key:peer".to_string(),
+            vec!["did:key:peer".to_string()],
             "Alice".to_string(),
             "".to_string(),
         );
@@ -294,7 +294,7 @@ mod tests {
         let key_to = generate::<X25519KeyPair>(None);
         let did_to = key_to.get_did_document(Default::default()).id;
         let invitation = Invitation::new(
-            "did:key:peer".to_string(),
+            vec!["did:key:peer".to_string()],
             "Alice".to_string(),
             "".to_string(),
         );
