@@ -3,7 +3,7 @@ extern crate rocket;
 use async_mutex::Mutex;
 use base58::{FromBase58, ToBase58};
 use did_key::{
-    generate, DIDCore, KeyMaterial, KeyPair, X25519KeyPair, CONFIG_JOSE_PUBLIC, CONFIG_LD_PUBLIC,
+    generate, DIDCore, KeyMaterial, X25519KeyPair, CONFIG_JOSE_PUBLIC, CONFIG_LD_PUBLIC,
 };
 use didcomm_mediator::config::Config;
 use didcomm_mediator::connections::{ConnectionStorage, Connections};
@@ -13,14 +13,13 @@ use didcomm_mediator::message::receive;
 use didcomm_mediator::message::{has_return_route_all_header, sign_and_encrypt};
 use didcomm_mediator::protocols::didexchange::DidExchangeHandler;
 use didcomm_mediator::protocols::discoverfeatures::DiscoverFeaturesHandler;
-use didcomm_mediator::protocols::forward::ForwardBuilder;
-use didcomm_mediator::protocols::forward::ForwardHandler;
+use didcomm_mediator::protocols::forward::{ForwardBuilder, ForwardHandler};
 use didcomm_mediator::protocols::messagepickup::MessagePickupHandler;
 use didcomm_mediator::protocols::trustping::TrustPingHandler;
+use didcomm_mediator::wallet::Wallet;
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::http::{Header, Status};
-use rocket::{response::Redirect, serde::json::Json, State};
-use rocket::{Request, Response};
+use rocket::{response::Redirect, serde::json::Json, Request, Response, State};
 use serde_json::Value;
 use std::sync::Arc;
 use std::vec;
@@ -31,18 +30,17 @@ fn index() -> Redirect {
 }
 
 #[get("/invitation")]
-fn invitation_endpoint(config: &State<Config>, key: &State<KeyPair>) -> Json<InvitationResponse> {
-    oob_invitation_endpoint(config, key)
+fn invitation_endpoint(config: &State<Config>, wallet: &State<Wallet>) -> Json<InvitationResponse> {
+    oob_invitation_endpoint(config, wallet)
 }
 
 #[post("/outofband/create-invitation")]
 fn oob_invitation_endpoint(
     config: &State<Config>,
-    key: &State<KeyPair>,
+    wallet: &State<Wallet>,
 ) -> Json<InvitationResponse> {
-    let did_doc = key.get_did_document(CONFIG_JOSE_PUBLIC);
+    let did_doc = wallet.did_key().get_did_document(CONFIG_JOSE_PUBLIC);
     let did = did_doc.id;
-
     let response = InvitationResponse {
         invitation: Invitation::new(
             did,
@@ -50,21 +48,28 @@ fn oob_invitation_endpoint(
             config.ext_service.to_string(),
         ),
     };
-
     Json(response)
 }
 
 #[get("/.well-known/did.json")]
-fn did_web_endpoint(config: &State<Config>, key: &State<KeyPair>) -> Json<Value> {
-    let mut did_doc = key.get_did_document(CONFIG_LD_PUBLIC);
+fn did_web_endpoint(config: &State<Config>, wallet: &State<Wallet>) -> Json<Value> {
+    let mut did_doc = wallet.did_key().get_did_document(CONFIG_LD_PUBLIC);
     did_doc.verification_method[0].private_key = None;
+    let did_key = did_doc.id.to_string();
     let mut did_doc = serde_json::to_value(&did_doc).unwrap();
     did_doc["service"] = serde_json::json!([
       {
         "id": "2e9e814a-c1e1-416e-a21a-a4182809950c",
-        "serviceEndpoint": config.ext_service,
+        "serviceEndpoint": [
+      {
+        "uri": config.ext_service,
+        "accept": [
+            "didcomm/v2"
+        ],
+        "recipientKeys": [did_key.to_string()]
+      }],
         "type": "did-communication"
-      }
+      },
     ]);
     Json(did_doc)
 }
@@ -76,14 +81,21 @@ fn didcomm_options() -> Status {
 
 #[post("/didcomm", format = "any", data = "<body>")]
 async fn didcomm_endpoint(
-    key: &State<KeyPair>,
+    wallet: &State<Wallet>,
     connections: &State<Arc<Mutex<Box<dyn ConnectionStorage>>>>,
     body: Json<Value>,
 ) -> Result<Json<Value>, Status> {
     let body_str = serde_json::to_string(&body.into_inner()).unwrap();
     let connections: &Arc<Mutex<Box<dyn ConnectionStorage>>> = connections;
 
-    let received = match receive(&body_str, Some(&key.private_key_bytes()), None, None).await {
+    let received = match receive(
+        &body_str,
+        Some(&wallet.did_key().private_key_bytes()),
+        None,
+        None,
+    )
+    .await
+    {
         Ok(received) => received,
         Err(_) => return Err(Status::BadRequest),
     };
@@ -100,7 +112,7 @@ async fn didcomm_endpoint(
         let handled = {
             let connections = connections.clone();
             let handled = handler
-                .handle(&received, Some(key), Some(&connections))
+                .handle(&received, Some(&wallet.did_key()), Some(&connections))
                 .await;
             handled.unwrap()
         };
@@ -125,9 +137,9 @@ async fn didcomm_endpoint(
                 true => {
                     let response = match sign_and_encrypt(
                         &message,
-                        &key.get_did_document(Default::default()).id,
+                        &wallet.did_key().get_did_document(Default::default()).id,
                         &to,
-                        key,
+                        &wallet.did_key(),
                     )
                     .await
                     {
@@ -182,12 +194,13 @@ fn rocket() -> _ {
             key
         }
     };
+    let wallet = Wallet::new(config.key_seed.clone());
     let did_doc = key.get_did_document(CONFIG_JOSE_PUBLIC);
-    let did = did_doc.id;
+    let did_key = did_doc.id;
 
-    println!("{}", did);
+    println!("did key: {}", did_key);
 
-    config.did = did;
+    config.did_key = Some(did_key);
 
     let connections: Arc<Mutex<Box<dyn ConnectionStorage>>> =
         Arc::new(Mutex::new(Box::new(Connections::new())));
@@ -206,7 +219,7 @@ fn rocket() -> _ {
             ],
         )
         .manage(config)
-        .manage(key)
+        .manage(wallet)
         .manage(connections)
 }
 

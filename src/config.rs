@@ -5,5 +5,7 @@ pub struct Config {
     pub ext_hostname: String,
     pub ext_service: String,
     pub key_seed: Option<String>,
-    pub did: String,
+    pub did_key: Option<String>,
+    #[cfg(feature = "iota")]
+    pub did_iota: Option<String>,
 }

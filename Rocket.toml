@@ -1,7 +1,7 @@
 [default]
 ident = "mediator"
 key_seed = "4bo9pLUEahsPqerR756HCQ4A9m3fS7WKwUsXru7CSDFd"
-did = "did:key:z6MkpFZ86WuUpihn1mTRbpBCGE6YpCvsBYtZQYnd9jcuAUup"
+did_key = "did:key:z6MkpFZ86WuUpihn1mTRbpBCGE6YpCvsBYtZQYnd9jcuAUup"
 
 [debug]
 port = 8000
