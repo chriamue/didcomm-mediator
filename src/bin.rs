@@ -39,7 +39,7 @@ fn oob_invitation_endpoint(
     config: &State<Config>,
     wallet: &State<Wallet>,
 ) -> Json<InvitationResponse> {
-    let did_doc = wallet.did_key().get_did_document(CONFIG_JOSE_PUBLIC);
+    let did_doc = wallet.keypair().get_did_document(CONFIG_JOSE_PUBLIC);
     let did = did_doc.id;
     let response = InvitationResponse {
         invitation: Invitation::new(
@@ -53,7 +53,7 @@ fn oob_invitation_endpoint(
 
 #[get("/.well-known/did.json")]
 fn did_web_endpoint(config: &State<Config>, wallet: &State<Wallet>) -> Json<Value> {
-    let mut did_doc = wallet.did_key().get_did_document(CONFIG_LD_PUBLIC);
+    let mut did_doc = wallet.keypair().get_did_document(CONFIG_LD_PUBLIC);
     did_doc.verification_method[0].private_key = None;
     let did_key = did_doc.id.to_string();
     let mut did_doc = serde_json::to_value(&did_doc).unwrap();
@@ -90,7 +90,7 @@ async fn didcomm_endpoint(
 
     let received = match receive(
         &body_str,
-        Some(&wallet.did_key().private_key_bytes()),
+        Some(&wallet.keypair().private_key_bytes()),
         None,
         None,
     )
@@ -112,7 +112,7 @@ async fn didcomm_endpoint(
         let handled = {
             let connections = connections.clone();
             let handled = handler
-                .handle(&received, Some(&wallet.did_key()), Some(&connections))
+                .handle(&received, Some(&wallet.keypair()), Some(&connections))
                 .await;
             handled.unwrap()
         };
@@ -137,9 +137,9 @@ async fn didcomm_endpoint(
                 true => {
                     let response = match sign_and_encrypt(
                         &message,
-                        &wallet.did_key().get_did_document(Default::default()).id,
+                        &wallet.keypair().get_did_document(Default::default()).id,
                         &to,
-                        &wallet.did_key(),
+                        &wallet.keypair(),
                     )
                     .await
                     {

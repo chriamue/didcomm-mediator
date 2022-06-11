@@ -2,6 +2,8 @@
 ident = "mediator"
 key_seed = "4bo9pLUEahsPqerR756HCQ4A9m3fS7WKwUsXru7CSDFd"
 did_key = "did:key:z6MkpFZ86WuUpihn1mTRbpBCGE6YpCvsBYtZQYnd9jcuAUup"
+wallet_path = "wallet.hold.example"
+wallet_password = "changeme"
 
 [debug]
 port = 8000

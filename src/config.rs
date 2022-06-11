@@ -4,6 +4,8 @@ pub struct Config {
     pub ident: String,
     pub ext_hostname: String,
     pub ext_service: String,
+    pub wallet_path: Option<String>,
+    pub wallet_password: Option<String>,
     pub key_seed: Option<String>,
     pub did_key: Option<String>,
     #[cfg(feature = "iota")]
