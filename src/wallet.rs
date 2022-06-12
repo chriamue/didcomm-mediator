@@ -57,6 +57,21 @@ impl Wallet {
     }
 
     #[cfg(feature = "iota")]
+    async fn update_iota_key(
+        account: &mut identity::account::Account,
+        key: identity::crypto::PublicKey,
+    ) {
+        account
+            .update_identity()
+            .create_method()
+            .content(identity::account::MethodContent::PublicX25519(key))
+            .fragment("kex-0")
+            .apply()
+            .await
+            .unwrap();
+    }
+
+    #[cfg(feature = "iota")]
     async fn load_iota_account(
         config: &Config,
     ) -> Result<identity::account::Account, Box<dyn std::error::Error>> {
@@ -91,7 +106,7 @@ impl Wallet {
                 )
                 .unwrap();
                 let id_setup = IdentitySetup::new().private_key(keypair_ed.private().clone());
-                let account = Account::builder()
+                let mut account = Account::builder()
                     .autosave(AutoSave::Every)
                     .storage(
                         Stronghold::new(
@@ -105,6 +120,12 @@ impl Wallet {
                     .create_identity(id_setup)
                     .await?;
                 println!("created new identity: {:?}", account.did());
+                let keypair = identity::prelude::KeyPair::try_from_private_key_bytes(
+                    KeyType::X25519,
+                    &private,
+                )
+                .unwrap();
+                Self::update_iota_key(&mut account, keypair.public().clone()).await;
                 account
             }
             (_, _) => {
@@ -123,7 +144,6 @@ impl Wallet {
                     .await?
             }
         };
-
         Ok(account)
     }
 
