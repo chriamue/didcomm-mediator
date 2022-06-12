@@ -1,8 +1,8 @@
 [default]
 ident = "mediator"
-key_seed = "F3JbRaYFNWwpvxSZHVV7i5pcpdTjGWiJHRCbUVHe9wWu"
-did_key = "did:key:z6LSopzj1Rwdjx7RAUaRYwDPSzwXudhjE2PU7iimBzcHUqEi"
-did_iota = "did:iota:Dtt6G44R8pMSGLRRZPnzsCatHftxqSLwpNwfoiivvAxH"
+key_seed = "293WPZ2PJQmNFN3MCMu49RM6ukVEQkfM1aJp9gJ8JhAs"
+did_key = "did:key:z6LSp5C8TjVvzJx3Kh5MFcdkHit6CVKTQ9RmTr3jLyE77BfH"
+did_iota = "did:iota:11PwbeZDPtksuh5rTojk7eALu7R7adYQkBakt49tQE7"
 wallet_path = "wallet.hold.example"
 wallet_password = "changeme"
 

@@ -35,14 +35,6 @@ async fn invitation_endpoint(config: &State<Config>, wallet: &State<Wallet>) -> 
 
 #[post("/outofband/create-invitation")]
 async fn oob_invitation_endpoint(config: &State<Config>, wallet: &State<Wallet>) -> Json<Value> {
-    let mut keys: Vec<String> = vec![wallet.did_key()];
-    #[cfg(feature = "iota")]
-    {
-        if wallet.did_iota().is_some() {
-            keys.push(wallet.did_iota().unwrap())
-        }
-    }
-
     let mut did_doc = wallet.keypair().get_did_document(CONFIG_LD_PUBLIC);
     did_doc.verification_method[0].private_key = None;
 
