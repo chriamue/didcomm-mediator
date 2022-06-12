@@ -9,6 +9,7 @@ use didcomm_rs::Message;
 use serde_json::Value;
 use std::error::Error;
 use std::sync::Arc;
+use uuid::Uuid;
 
 #[derive(Default)]
 pub struct DidExchangeResponseBuilder {
@@ -40,24 +41,24 @@ impl DidExchangeResponseBuilder {
     pub fn build(&mut self) -> Result<Message, &'static str> {
         match &self.message {
             Some(message) => match message.get_didcomm_header().m_type.as_str() {
-                "https://didcomm.org/out-of-band/1.0/invitation" => self.build_request(),
+                "\"https://didcomm.org/out-of-band/2.0/invitation\"" => self.build_request(),
+                "https://didcomm.org/out-of-band/2.0/invitation" => self.build_request(),
                 "https://didcomm.org/didexchange/1.0/request" => self.build_response(),
                 "https://didcomm.org/didexchange/1.0/response" => self.build_complete(),
-                _ => Err("unsupported message"),
+                _ => {
+                    println!("{}", message.get_didcomm_header().m_type.as_str());
+                    Err("unsupported message")
+                }
             },
             None => Err("no message"),
         }
     }
 
     pub fn build_request(&mut self) -> Result<Message, &'static str> {
-        let thid = self
-            .message
-            .as_ref()
-            .unwrap()
-            .get_didcomm_header()
-            .thid
-            .clone()
-            .unwrap();
+        let thid = match &self.message {
+            Some(message) => message.get_didcomm_header().thid.clone().unwrap(),
+            _ => Uuid::new_v4().to_string(),
+        };
         Ok(Message::new()
             .m_type("https://didcomm.org/didexchange/1.0/request")
             .thid(&thid)
@@ -141,41 +142,17 @@ impl DidcommHandler for DidExchangeHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::invitation::Invitation;
+    use crate::protocols::invitation::InvitationBuilder;
     use did_key::{generate, DIDCore, X25519KeyPair, CONFIG_LD_PUBLIC};
 
     #[test]
     fn test_build_resquest() {
-        let invitation = r#"
-        {
-            "@id": "949034e0-f1e3-4067-bf2e-ce1ff7a831d4",
-            "@type": "https://didcomm.org/out-of-band/1.0/invitation",
-            "accept": [
-              "didcomm/v2"
-            ],
-            "handshake_protocols": [
-              "https://didcomm.org/didexchange/1.0"
-            ],
-            "label": "did-planning-poker",
-            "services": [
-              {
-                "id": "2e9e814a-c1e1-416e-a21a-a4182809950c",
-                "recipientKeys": [
-                  "did:key:z6MkpFZ86WuUpihn1mTRbpBCGE6YpCvsBYtZQYnd9jcuAUup"
-                ],
-                "serviceEndpoint": "ws://localhost:8082",
-                "type": "did-communication"
-              }
-            ]
-          }
-        "#;
-        let invitation: Value = serde_json::from_str(invitation).unwrap();
         let keypair = generate::<X25519KeyPair>(None);
         let did_doc = serde_json::to_value(keypair.get_did_document(CONFIG_LD_PUBLIC)).unwrap();
 
         let invitation = Message::new()
-            .m_type("https://didcomm.org/out-of-band/1.0/invitation")
-            .thid(&invitation["@id"].as_str().unwrap());
+            .m_type("https://didcomm.org/out-of-band/2.0/invitation")
+            .thid(&Uuid::new_v4().to_string());
         let response = DidExchangeResponseBuilder::new()
             .message(invitation)
             .did("did:key:z6MkpFZ86WuUpihn1mTRbpBCGE6YpCvsBYtZQYnd9jcuAUup".to_string())
@@ -195,16 +172,15 @@ mod tests {
     fn test_build_response() {
         let alice_key = generate::<X25519KeyPair>(None);
         let bob_key = generate::<X25519KeyPair>(None);
-        let invitation = Invitation::new(
-            vec!["did:key:peer".to_string()],
-            "Alice".to_string(),
-            "".to_string(),
-        );
+
+        let invitation = InvitationBuilder::new()
+            .goal("to create a relationship".to_string())
+            .goal_code("aries.rel.build".to_string())
+            .build()
+            .unwrap();
+
         let did_doc = serde_json::to_value(alice_key.get_did_document(CONFIG_LD_PUBLIC)).unwrap();
 
-        let invitation = Message::new()
-            .m_type("https://didcomm.org/out-of-band/1.0/invitation")
-            .thid(&invitation.id);
         let request = DidExchangeResponseBuilder::new()
             .message(invitation)
             .did("did:key:z6MkpFZ86WuUpihn1mTRbpBCGE6YpCvsBYtZQYnd9jcuAUup".to_string())
@@ -238,16 +214,15 @@ mod tests {
     fn test_build_complete() {
         let alice_key = generate::<X25519KeyPair>(None);
         let bob_key = generate::<X25519KeyPair>(None);
-        let invitation = Invitation::new(
-            vec!["did:key:peer".to_string()],
-            "Alice".to_string(),
-            "".to_string(),
-        );
+
+        let invitation = InvitationBuilder::new()
+            .goal("to create a relationship".to_string())
+            .goal_code("aries.rel.build".to_string())
+            .build()
+            .unwrap();
+
         let did_doc = serde_json::to_value(alice_key.get_did_document(CONFIG_LD_PUBLIC)).unwrap();
 
-        let invitation = Message::new()
-            .m_type("https://didcomm.org/out-of-band/1.0/invitation")
-            .thid(&invitation.id);
         let request = DidExchangeResponseBuilder::new()
             .message(invitation)
             .did("did:key:z6MkpFZ86WuUpihn1mTRbpBCGE6YpCvsBYtZQYnd9jcuAUup".to_string())
@@ -293,16 +268,14 @@ mod tests {
         let key = generate::<X25519KeyPair>(None);
         let key_to = generate::<X25519KeyPair>(None);
         let did_to = key_to.get_did_document(Default::default()).id;
-        let invitation = Invitation::new(
-            vec!["did:key:peer".to_string()],
-            "Alice".to_string(),
-            "".to_string(),
-        );
+        let invitation = InvitationBuilder::new()
+            .goal("to create a relationship".to_string())
+            .goal_code("aries.rel.build".to_string())
+            .build()
+            .unwrap();
+
         let did_doc = serde_json::to_value(key.get_did_document(CONFIG_LD_PUBLIC)).unwrap();
 
-        let invitation = Message::new()
-            .m_type("https://didcomm.org/out-of-band/1.0/invitation")
-            .thid(&invitation.id);
         let request = DidExchangeResponseBuilder::new()
             .message(invitation)
             .did(did_to.to_string())

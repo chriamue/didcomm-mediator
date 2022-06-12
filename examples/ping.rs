@@ -1,7 +1,7 @@
 use did_key::{generate, DIDCore, KeyMaterial, X25519KeyPair};
-use didcomm_mediator::invitation::InvitationResponse;
 use didcomm_mediator::message::sign_and_encrypt_message;
 use didcomm_mediator::protocols::trustping::TrustPingResponseBuilder;
+use didcomm_mediator::service::Service;
 use didcomm_rs::Message;
 use std::time::Instant;
 
@@ -9,31 +9,25 @@ use std::time::Instant;
 async fn main() {
     let key = generate::<X25519KeyPair>(None);
 
-    let invitation: InvitationResponse = reqwest::get("http://localhost:8000/invitation")
+    let invitation: Message = reqwest::get("http://localhost:8000/invitation")
         .await
         .unwrap()
         .json()
         .await
         .unwrap();
 
-    let did_to = invitation
-        .invitation
-        .services
-        .first()
-        .unwrap()
-        .recipient_keys
-        .first()
+    let (_, services) = invitation
+        .get_application_params()
+        .find(|(key, _)| *key == "services")
         .unwrap();
+    let services: Vec<Service> = serde_json::from_str(services).unwrap();
+
+    let did_to = services.first().unwrap().id.replace("#didcomm", "");
 
     println!("PING {}", did_to);
 
     let did_doc = key.get_did_document(Default::default());
     let did_from = did_doc.id.to_string();
-
-    let invitation = Message::new()
-        .m_type("https://didcomm.org/out-of-band/1.0/invitation")
-        .from(did_to)
-        .thid(&invitation.invitation.id);
 
     let request = TrustPingResponseBuilder::new()
         .build()

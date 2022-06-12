@@ -6,14 +6,15 @@ use did_key::{generate, DIDCore, KeyMaterial, X25519KeyPair, CONFIG_LD_PUBLIC};
 use didcomm_mediator::config::Config;
 use didcomm_mediator::connections::{ConnectionStorage, Connections};
 use didcomm_mediator::handler::{DidcommHandler, HandlerResponse};
-use didcomm_mediator::invitation::{Invitation, InvitationResponse};
 use didcomm_mediator::message::receive;
 use didcomm_mediator::message::{has_return_route_all_header, sign_and_encrypt};
-use didcomm_mediator::protocols::didexchange::DidExchangeHandler;
+use didcomm_mediator::protocols::didexchange::{DidExchangeHandler, DidExchangeResponseBuilder};
 use didcomm_mediator::protocols::discoverfeatures::DiscoverFeaturesHandler;
 use didcomm_mediator::protocols::forward::{ForwardBuilder, ForwardHandler};
+use didcomm_mediator::protocols::invitation::InvitationBuilder;
 use didcomm_mediator::protocols::messagepickup::MessagePickupHandler;
 use didcomm_mediator::protocols::trustping::TrustPingHandler;
+use didcomm_mediator::service::Service;
 use didcomm_mediator::wallet::Wallet;
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::http::{Header, Status};
@@ -28,15 +29,12 @@ fn index() -> Redirect {
 }
 
 #[get("/invitation")]
-fn invitation_endpoint(config: &State<Config>, wallet: &State<Wallet>) -> Json<InvitationResponse> {
-    oob_invitation_endpoint(config, wallet)
+async fn invitation_endpoint(config: &State<Config>, wallet: &State<Wallet>) -> Json<Value> {
+    oob_invitation_endpoint(config, wallet).await
 }
 
 #[post("/outofband/create-invitation")]
-fn oob_invitation_endpoint(
-    config: &State<Config>,
-    wallet: &State<Wallet>,
-) -> Json<InvitationResponse> {
+async fn oob_invitation_endpoint(config: &State<Config>, wallet: &State<Wallet>) -> Json<Value> {
     let mut keys: Vec<String> = vec![wallet.did_key()];
     #[cfg(feature = "iota")]
     {
@@ -45,13 +43,36 @@ fn oob_invitation_endpoint(
         }
     }
 
-    let response = InvitationResponse {
-        invitation: Invitation::new(
-            keys,
-            config.ident.to_string(),
-            config.ext_service.to_string(),
-        ),
-    };
+    let mut did_doc = wallet.keypair().get_did_document(CONFIG_LD_PUBLIC);
+    did_doc.verification_method[0].private_key = None;
+
+    let did_exchange = DidExchangeResponseBuilder::new()
+        .did_doc(serde_json::to_value(&did_doc).unwrap())
+        .did(wallet.did_key())
+        .build_request()
+        .unwrap();
+
+    let mut services: Vec<Service> =
+        vec![
+            Service::new(wallet.did_key(), config.ext_service.to_string())
+                .await
+                .unwrap(),
+        ];
+    #[cfg(feature = "iota")]
+    services.push(
+        Service::new(wallet.did_iota().unwrap(), config.ext_service.to_string())
+            .await
+            .unwrap(),
+    );
+    let invitation = InvitationBuilder::new()
+        .goal("to create a relationship".to_string())
+        .goal_code("aries.rel.build".to_string())
+        .services(services)
+        .attachments(vec![did_exchange])
+        .build()
+        .unwrap();
+
+    let response = serde_json::from_str(&invitation.as_raw_json().unwrap()).unwrap();
     Json(response)
 }
 
@@ -70,7 +91,7 @@ fn did_web_endpoint(config: &State<Config>, wallet: &State<Wallet>) -> Json<Valu
         "accept": [
             "didcomm/v2"
         ],
-        "recipientKeys": [did_key.to_string()]
+        "recipientKeys": [did_key]
       },
       ],
         "type": "did-communication"
@@ -259,11 +280,13 @@ mod main_tests {
         let req = client.get("/invitation");
         let response = req.dispatch().await;
         assert_eq!(response.status(), Status::Ok);
-        let invitation_response: InvitationResponse = response.into_json().await.unwrap();
-        assert_eq!(
-            invitation_response.invitation.services[0].typ,
-            "did-communication"
-        );
+        let invitation: Message = response.into_json().await.unwrap();
+        let (_, services) = invitation
+            .get_application_params()
+            .find(|(key, _)| *key == "services")
+            .unwrap();
+        let services: Vec<Service> = serde_json::from_str(services).unwrap();
+        assert_eq!(services[0].typ, "did-communication");
     }
 
     #[tokio::test]
@@ -273,11 +296,13 @@ mod main_tests {
         let req = client.post("/outofband/create-invitation");
         let response = req.dispatch().await;
         assert_eq!(response.status(), Status::Ok);
-        let invitation_response: InvitationResponse = response.into_json().await.unwrap();
-        assert_eq!(
-            invitation_response.invitation.services[0].typ,
-            "did-communication"
-        );
+        let invitation: Message = response.into_json().await.unwrap();
+        let (_, services) = invitation
+            .get_application_params()
+            .find(|(key, _)| *key == "services")
+            .unwrap();
+        let services: Vec<Service> = serde_json::from_str(services).unwrap();
+        assert_eq!(services[0].typ, "did-communication");
     }
 
     #[tokio::test]
@@ -287,9 +312,13 @@ mod main_tests {
         let req = client.get("/invitation");
         let response = req.dispatch().await;
         assert_eq!(response.status(), Status::Ok);
-        let invitation_response: InvitationResponse = response.into_json().await.unwrap();
-        let invitation = invitation_response.invitation;
-        let recipient_did = invitation.services[0].recipient_keys[0].to_string();
+        let invitation: Message = response.into_json().await.unwrap();
+        let (_, services) = invitation
+            .get_application_params()
+            .find(|(key, _)| *key == "services")
+            .unwrap();
+        let services: Vec<Service> = serde_json::from_str(services).unwrap();
+        let recipient_did = services[0].id.replace("#didcomm", "");
         let recipient_key = did_key::resolve(&recipient_did).unwrap();
 
         let key = generate::<X25519KeyPair>(None);
@@ -331,9 +360,13 @@ mod main_tests {
         let req = client.get("/invitation");
         let response = req.dispatch().await;
         assert_eq!(response.status(), Status::Ok);
-        let invitation_response: InvitationResponse = response.into_json().await.unwrap();
-        let invitation = invitation_response.invitation;
-        let recipient_did = invitation.services[0].recipient_keys[0].to_string();
+        let invitation: Message = response.into_json().await.unwrap();
+        let (_, services) = invitation
+            .get_application_params()
+            .find(|(key, _)| *key == "services")
+            .unwrap();
+        let services: Vec<Service> = serde_json::from_str(services).unwrap();
+        let recipient_did = services[0].id.replace("#didcomm", "");
         let recipient_key = did_key::resolve(&recipient_did).unwrap();
         let wrong_recipient_key = generate::<X25519KeyPair>(None);
 
@@ -376,9 +409,13 @@ mod main_tests {
         let req = client.get("/invitation");
         let response = req.dispatch().await;
         assert_eq!(response.status(), Status::Ok);
-        let invitation_response: InvitationResponse = response.into_json().await.unwrap();
-        let invitation = invitation_response.invitation;
-        let recipient_did = invitation.services[0].recipient_keys[0].to_string();
+        let invitation: Message = response.into_json().await.unwrap();
+        let (_, services) = invitation
+            .get_application_params()
+            .find(|(key, _)| *key == "services")
+            .unwrap();
+        let services: Vec<Service> = serde_json::from_str(services).unwrap();
+        let recipient_did = services[0].id.replace("#didcomm", "");
         let recipient_key = did_key::resolve(&recipient_did).unwrap();
 
         let key = generate::<X25519KeyPair>(None);
@@ -456,9 +493,13 @@ mod main_tests {
         let req = client.get("/invitation");
         let response = req.dispatch().await;
         assert_eq!(response.status(), Status::Ok);
-        let invitation_response: InvitationResponse = response.into_json().await.unwrap();
-        let invitation = invitation_response.invitation;
-        let recipient_did = invitation.services[0].recipient_keys[0].to_string();
+        let invitation: Message = response.into_json().await.unwrap();
+        let (_, services) = invitation
+            .get_application_params()
+            .find(|(key, _)| *key == "services")
+            .unwrap();
+        let services: Vec<Service> = serde_json::from_str(services).unwrap();
+        let recipient_did = services[0].id.replace("#didcomm", "");
         let recipient_key = did_key::resolve(&recipient_did).unwrap();
 
         let key = generate::<X25519KeyPair>(None);
@@ -513,17 +554,21 @@ mod main_tests {
         let req = client.get("/invitation");
         let response = req.dispatch().await;
         assert_eq!(response.status(), Status::Ok);
-        let invitation_response: InvitationResponse = response.into_json().await.unwrap();
-        let invitation = invitation_response.invitation;
-        let recipient_did = invitation.services[0].recipient_keys[0].to_string();
+        let invitation: Message = response.into_json().await.unwrap();
+        let (_, services) = invitation
+            .get_application_params()
+            .find(|(key, _)| *key == "services")
+            .unwrap();
+        let services: Vec<Service> = serde_json::from_str(services).unwrap();
+        let recipient_did = services[0].id.replace("#didcomm", "");
 
         let key = generate::<X25519KeyPair>(None);
         let did_doc = key.get_did_document(CONFIG_JOSE_PUBLIC);
         let did_from = did_doc.id.to_string();
 
         let invitation = Message::new()
-            .m_type("https://didcomm.org/out-of-band/1.0/invitation")
-            .thid(&invitation.id)
+            .m_type("https://didcomm.org/out-of-band/2.0/invitation")
+            .thid(&invitation.get_didcomm_header().id)
             .from(&recipient_did);
         let request = DidExchangeResponseBuilder::new()
             .message(invitation.clone())
@@ -590,9 +635,13 @@ mod main_tests {
         let req = client.get("/invitation");
         let response = req.dispatch().await;
         assert_eq!(response.status(), Status::Ok);
-        let invitation_response: InvitationResponse = response.into_json().await.unwrap();
-        let invitation = invitation_response.invitation;
-        let mediator_did = invitation.services[0].recipient_keys[0].to_string();
+        let invitation: Message = response.into_json().await.unwrap();
+        let (_, services) = invitation
+            .get_application_params()
+            .find(|(key, _)| *key == "services")
+            .unwrap();
+        let services: Vec<Service> = serde_json::from_str(services).unwrap();
+        let mediator_did = services[0].id.replace("#didcomm", "");
 
         let alice_key = generate::<X25519KeyPair>(None);
         let did_doc = alice_key.get_did_document(CONFIG_JOSE_PUBLIC);

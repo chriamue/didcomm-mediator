@@ -1,6 +1,6 @@
-use serde::{Deserialize, Serialize};
-use base58::ToBase58;
 use crate::resolver::resolve;
+use base58::ToBase58;
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Service {
@@ -16,12 +16,12 @@ pub struct Service {
 impl Service {
     pub async fn new(did: String, endpoint: String) -> Result<Self, Box<dyn std::error::Error>> {
         let id = format!("{}#didcomm", did);
-        let pub_key = resolve(&did).await.unwrap().to_base58();
+        let pub_key = resolve(&did).await.unwrap_or_default().to_base58();
         Ok(Service {
             id,
             recipient_keys: vec![pub_key],
             service_endpoint: endpoint,
-            typ: "did-communication".to_string()
+            typ: "did-communication".to_string(),
         })
     }
 }
@@ -30,7 +30,7 @@ impl Service {
 mod tests {
     use super::*;
     use base58::FromBase58;
-    use did_key::{generate,DIDCore, X25519KeyPair, KeyFormat::Base58};
+    use did_key::{generate, DIDCore, KeyFormat::Base58, X25519KeyPair};
 
     #[tokio::test]
     async fn new_service() {
@@ -43,7 +43,15 @@ mod tests {
 
         let service = Service::new(did, endpoint.to_string()).await.unwrap();
         assert_eq!(service.service_endpoint, endpoint);
-        assert_eq!(&Base58(service.recipient_keys[0].to_string()), keypair.get_did_document(Default::default()).verification_method[0].public_key.as_ref().unwrap());
+        assert_eq!(
+            &Base58(service.recipient_keys[0].to_string()),
+            keypair
+                .get_did_document(Default::default())
+                .verification_method[0]
+                .public_key
+                .as_ref()
+                .unwrap()
+        );
         println!("{:?}", service);
     }
 }

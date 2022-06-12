@@ -7,11 +7,15 @@ pub async fn resolve(did: &str) -> Result<Vec<u8>, identity::iota::Error> {
     let resolver: Resolver = Resolver::new().await.unwrap();
     let did = IotaDID::from_str(did).unwrap();
     let document = resolver.resolve(&did).await?;
-    let method = document
+    match document
         .document
         .resolve_method("kex-0", Some(MethodScope::VerificationMethod))
-        .unwrap();
-    Ok(method.data().try_decode().unwrap())
+    {
+        Some(method) => Ok(method.data().try_decode().unwrap()),
+        None => Err(identity::iota::Error::DIDNotFound(
+            "kex-0 method missing".to_string(),
+        )),
+    }
 }
 
 #[cfg(test)]

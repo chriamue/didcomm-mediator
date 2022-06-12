@@ -51,10 +51,9 @@ impl Wallet {
 
     #[cfg(feature = "iota")]
     pub fn did_iota(&self) -> Option<String> {
-        match &self.account {
-            Some(account) => Some(account.did().to_string()),
-            None => None,
-        }
+        self.account
+            .as_ref()
+            .map(|account| account.did().to_string())
     }
 
     #[cfg(feature = "iota")]
