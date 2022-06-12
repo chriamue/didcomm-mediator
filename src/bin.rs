@@ -109,6 +109,15 @@ fn didcomm_options() -> Status {
     Status::Ok
 }
 
+#[post("/", format = "any", data = "<body>")]
+async fn root_didcomm_endpoint(
+    wallet: &State<Wallet>,
+    connections: &State<Arc<Mutex<Box<dyn ConnectionStorage>>>>,
+    body: Json<Value>,
+) -> Result<Json<Value>, Status> {
+    didcomm_endpoint(wallet, connections, body).await
+}
+
 #[post("/didcomm", format = "any", data = "<body>")]
 async fn didcomm_endpoint(
     wallet: &State<Wallet>,
@@ -241,6 +250,7 @@ async fn rocket() -> _ {
                 index,
                 invitation_endpoint,
                 didcomm_options,
+                root_didcomm_endpoint,
                 didcomm_endpoint,
                 oob_invitation_endpoint,
                 did_web_endpoint
