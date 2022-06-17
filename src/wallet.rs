@@ -2,12 +2,12 @@ use crate::config::Config;
 use base58::{FromBase58, ToBase58};
 use did_key::{generate, DIDCore, KeyMaterial, KeyPair, X25519KeyPair};
 #[cfg(feature = "iota")]
-use identity::prelude::*;
+use identity_iota::prelude::*;
 
 pub struct Wallet {
     pub seed: String,
     #[cfg(feature = "iota")]
-    pub account: Option<identity::account::Account>,
+    pub account: Option<identity_iota::account::Account>,
 }
 
 impl Default for Wallet {
@@ -58,13 +58,13 @@ impl Wallet {
 
     #[cfg(feature = "iota")]
     async fn update_iota_key(
-        account: &mut identity::account::Account,
-        key: identity::crypto::PublicKey,
+        account: &mut identity_iota::account::Account,
+        key: identity_iota::crypto::PublicKey,
     ) {
         account
             .update_identity()
             .create_method()
-            .content(identity::account::MethodContent::PublicX25519(key))
+            .content(identity_iota::account::MethodContent::PublicX25519(key))
             .fragment("kex-0")
             .apply()
             .await
@@ -74,12 +74,12 @@ impl Wallet {
     #[cfg(feature = "iota")]
     async fn load_iota_account(
         config: &Config,
-    ) -> Result<identity::account::Account, Box<dyn std::error::Error>> {
-        use identity::account::Account;
-        use identity::account::AutoSave;
-        use identity::account::IdentitySetup;
-        use identity::account_storage::Stronghold;
-        use identity::iota_core::IotaDID;
+    ) -> Result<identity_iota::account::Account, Box<dyn std::error::Error>> {
+        use identity_iota::account::Account;
+        use identity_iota::account::AutoSave;
+        use identity_iota::account::IdentitySetup;
+        use identity_iota::account_storage::Stronghold;
+        use identity_iota::iota_core::IotaDID;
 
         let account = match (&config.key_seed, &config.did_iota) {
             (_, Some(did)) => {
@@ -100,7 +100,7 @@ impl Wallet {
             }
             (Some(seed), _) => {
                 let private = seed.from_base58().unwrap();
-                let keypair_ed = identity::prelude::KeyPair::try_from_private_key_bytes(
+                let keypair_ed = identity_iota::prelude::KeyPair::try_from_private_key_bytes(
                     KeyType::Ed25519,
                     &private,
                 )
@@ -120,7 +120,7 @@ impl Wallet {
                     .create_identity(id_setup)
                     .await?;
                 println!("created new identity: {:?}", account.did());
-                let keypair = identity::prelude::KeyPair::try_from_private_key_bytes(
+                let keypair = identity_iota::prelude::KeyPair::try_from_private_key_bytes(
                     KeyType::X25519,
                     &private,
                 )
@@ -151,7 +151,7 @@ impl Wallet {
         println!("did key: {}", self.did_key());
         #[cfg(feature = "iota")]
         {
-            use identity::iota::ExplorerUrl;
+            use identity_iota::client::ExplorerUrl;
             let explorer: &ExplorerUrl = ExplorerUrl::mainnet();
             if self.account.is_some() {
                 println!("did iota: {}", self.account.as_ref().unwrap().did());

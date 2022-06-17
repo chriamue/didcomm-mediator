@@ -15,7 +15,7 @@ required-features = ["bin"]
 
 [features]
 bin = ["tokio", "rocket"]
-iota = ["identity", "zeroize"]
+iota = ["identity_iota", "zeroize"]
 default = ["bin", "iota"]
 
 [dependencies]
@@ -28,9 +28,7 @@ did-key = "*"
 didcomm-rs = { version = "0.7.2", git = "https://github.com/decentralized-identity/didcomm-rs" }
 ed25519-dalek = { version = "1.0" }
 hex = { version = "0.4.3", features = ["serde"] }
-identity = { git = "https://github.com/iotaledger/identity.rs", branch = "dev", features = [
-    "account",
-], optional = true }
+identity_iota = { version = "0.6", optional = true }
 rand_core = "0.5"
 reqwest = { version = "0.11.3", features = ["blocking", "json"] }
 rocket = { version = "0.5.0-rc.1", features = ["json"], optional = true }

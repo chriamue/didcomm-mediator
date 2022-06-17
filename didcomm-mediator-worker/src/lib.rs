@@ -1,9 +1,6 @@
 use base58::FromBase58;
-use did_key::{
-    generate, DIDCore, KeyMaterial, X25519KeyPair, CONFIG_JOSE_PUBLIC, CONFIG_LD_PUBLIC,
-};
+use did_key::{generate, DIDCore, KeyMaterial, X25519KeyPair, CONFIG_LD_PUBLIC};
 use didcomm_mediator::connections::ConnectionStorage;
-use didcomm_mediator::invitation::Invitation;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
@@ -14,11 +11,14 @@ use async_mutex::Mutex;
 use didcomm_mediator::handler::{DidcommHandler, HandlerResponse};
 use didcomm_mediator::message::{has_return_route_all_header, sign_and_encrypt};
 use didcomm_mediator::protocols::didexchange::DidExchangeHandler;
+use didcomm_mediator::protocols::didexchange::DidExchangeResponseBuilder;
 use didcomm_mediator::protocols::discoverfeatures::DiscoverFeaturesHandler;
 use didcomm_mediator::protocols::forward::ForwardBuilder;
 use didcomm_mediator::protocols::forward::ForwardHandler;
+use didcomm_mediator::protocols::invitation::InvitationBuilder;
 use didcomm_mediator::protocols::messagepickup::MessagePickupHandler;
 use didcomm_mediator::protocols::trustping::TrustPingHandler;
+use didcomm_mediator::service::Service;
 use didcomm_rs::Message;
 
 fn log_request(req: &Request) {
@@ -69,26 +69,36 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
         .options("/invitation", |req, _ctx| {
             preflight_response(req.headers(), "")
         })
-        .get("/invitation", |_req, ctx| {
+        .get_async("/invitation", |_req, ctx| async move {
             let seed = ctx.secret("SEED").unwrap().to_string();
-            let ident = ctx.var("IDENT").unwrap().to_string();
+            let _ident = ctx.var("IDENT").unwrap().to_string();
             let ext_service = ctx.var("EXT_SERVICE").unwrap().to_string();
             let key = generate::<X25519KeyPair>(Some(&seed.from_base58().unwrap()));
-            let did_doc = key.get_did_document(CONFIG_JOSE_PUBLIC);
-            let did = did_doc.id;
+
+            let mut did_doc = key.get_did_document(CONFIG_LD_PUBLIC);
+            did_doc.verification_method[0].private_key = None;
+
+            let did_exchange = DidExchangeResponseBuilder::new()
+                .did_doc(serde_json::to_value(&did_doc).unwrap())
+                .did(did_doc.id.to_string())
+                .build_request()
+                .unwrap();
+
+            let services: Vec<Service> = vec![Service::new(did_doc.id, ext_service).await.unwrap()];
+            let invitation = InvitationBuilder::new()
+                .goal("to create a relationship".to_string())
+                .goal_code("aries.rel.build".to_string())
+                .services(services)
+                .attachments(vec![did_exchange])
+                .build()
+                .unwrap();
+
             let mut headers = worker::Headers::new();
             headers.set("Access-Control-Allow-Methods", "GET")?;
             headers.set("Access-Control-Allow-Origin", "*")?;
             headers.set("Access-Control-Allow-Headers", "*")?;
             headers.set("Access-Control-Allow-Credentials", "true")?;
-            let response = Response::from_json(&json!({
-                "invitation": Invitation::new(
-                    did,
-                    ident,
-                    ext_service
-                ),
-            }))
-            .unwrap();
+            let response = Response::from_json(&json!(invitation)).unwrap();
             Ok(response.with_headers(headers))
         })
         .get("/.well-known/did.json", |_req, ctx| {

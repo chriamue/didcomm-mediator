@@ -1,9 +1,10 @@
-use identity::did::MethodScope;
-use identity::iota::Resolver;
-use identity::iota_core::IotaDID;
+use identity_iota::client::Resolver;
+use identity_iota::did::MethodScope;
+use identity_iota::iota_core::IotaDID;
+use std::error::Error;
 use std::str::FromStr;
 
-pub async fn resolve(did: &str) -> Result<Vec<u8>, identity::iota::Error> {
+pub async fn resolve(did: &str) -> Result<Vec<u8>, Box<dyn Error>> {
     let resolver: Resolver = Resolver::new().await.unwrap();
     let did = IotaDID::from_str(did).unwrap();
     let document = resolver.resolve(&did).await?;
@@ -12,9 +13,7 @@ pub async fn resolve(did: &str) -> Result<Vec<u8>, identity::iota::Error> {
         .resolve_method("kex-0", Some(MethodScope::VerificationMethod))
     {
         Some(method) => Ok(method.data().try_decode().unwrap()),
-        None => Err(identity::iota::Error::DIDNotFound(
-            "kex-0 method missing".to_string(),
-        )),
+        None => Err(Box::new(identity_iota::iota_core::Error::MissingSigningKey)),
     }
 }
 
@@ -22,8 +21,8 @@ pub async fn resolve(did: &str) -> Result<Vec<u8>, identity::iota::Error> {
 mod tests {
     use super::*;
     use base58::FromBase58;
-    use identity::prelude::KeyPair;
-    use identity::prelude::*;
+    use identity_iota::prelude::KeyPair;
+    use identity_iota::prelude::*;
 
     #[tokio::test]
     async fn test_resolve() {

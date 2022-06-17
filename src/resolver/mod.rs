@@ -6,7 +6,7 @@ pub mod key_resolver;
 pub enum ResolveError {
     KeyResolveError(didcomm_rs::Error),
     #[cfg(feature = "iota")]
-    IotaResolveError(identity::iota::Error),
+    IotaResolveError(Box<dyn std::error::Error>),
 }
 
 pub async fn resolve(did: &str) -> Result<Vec<u8>, ResolveError> {

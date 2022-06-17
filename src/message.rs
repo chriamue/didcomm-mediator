@@ -150,8 +150,8 @@ mod tests {
     #[cfg(feature = "iota")]
     #[tokio::test]
     async fn test_iota_message_encryption() -> Result<(), Box<dyn std::error::Error>> {
-        use identity::prelude::KeyPair;
-        use identity::prelude::*;
+        use identity_iota::prelude::KeyPair;
+        use identity_iota::prelude::*;
 
         let seed = "CLKmgQ7NbRw3MpGu47TiSjQknGf2oBPnW9nFygzBkh9h";
         let private = seed.from_base58().unwrap();
