@@ -20,15 +20,21 @@ pub async fn resolve(did: &str) -> Result<Vec<u8>, Box<dyn Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::Config;
     use base58::FromBase58;
     use identity_iota::prelude::KeyPair;
     use identity_iota::prelude::*;
+    use rocket;
 
     #[tokio::test]
     async fn test_resolve() {
-        let seed = "CLKmgQ7NbRw3MpGu47TiSjQknGf2oBPnW9nFygzBkh9h";
+        let rocket = rocket::build();
+        let figment = rocket.figment();
+        let config: Config = figment.extract().expect("config");
+
+        let seed = config.key_seed.unwrap();
         let private = seed.from_base58().unwrap();
-        let did = "did:iota:HcFFrR72GJq2hXuwbz2UwE7wkDE2VRkX2NwHeSVroeUH".to_string();
+        let did = config.did_iota.unwrap();
 
         let keypair = KeyPair::try_from_private_key_bytes(KeyType::X25519, &private).unwrap();
 

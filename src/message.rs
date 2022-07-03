@@ -26,8 +26,8 @@ pub async fn sign_and_encrypt_message(
 
 pub async fn sign_and_encrypt(
     message: &Message,
-    did_from: &String,
-    did_to: &String,
+    did_from: &str,
+    did_to: &str,
     key: &KeyPair,
 ) -> Result<Value, Box<dyn std::error::Error>> {
     let sign_key = generate::<Ed25519KeyPair>(None);
@@ -150,18 +150,24 @@ mod tests {
     #[cfg(feature = "iota")]
     #[tokio::test]
     async fn test_iota_message_encryption() -> Result<(), Box<dyn std::error::Error>> {
+        use crate::config::Config;
         use identity_iota::prelude::KeyPair;
         use identity_iota::prelude::*;
+        use rocket;
 
-        let seed = "CLKmgQ7NbRw3MpGu47TiSjQknGf2oBPnW9nFygzBkh9h";
+        let rocket = rocket::build();
+        let figment = rocket.figment();
+        let config: Config = figment.extract().expect("config");
+
+        let seed = config.key_seed.unwrap();
         let private = seed.from_base58().unwrap();
 
         let keypair = generate::<X25519KeyPair>(Some(&private));
         let receiver_keypair_ex =
             KeyPair::try_from_private_key_bytes(KeyType::X25519, &private).unwrap();
 
-        let did_from = "did:iota:HcFFrR72GJq2hXuwbz2UwE7wkDE2VRkX2NwHeSVroeUH".to_string();
-        let did_to = "did:iota:HcFFrR72GJq2hXuwbz2UwE7wkDE2VRkX2NwHeSVroeUH".to_string();
+        let did_from = config.did_iota.as_ref().unwrap().to_string();
+        let did_to = config.did_iota.unwrap();
 
         let message = Message::new();
         let message = serde_json::to_string(
