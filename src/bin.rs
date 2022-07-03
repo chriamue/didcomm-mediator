@@ -5,6 +5,8 @@ use base58::{FromBase58, ToBase58};
 use did_key::{generate, DIDCore, KeyMaterial, X25519KeyPair, CONFIG_LD_PUBLIC};
 use didcomm_mediator::config::Config;
 use didcomm_mediator::connections::{ConnectionStorage, Connections};
+use didcomm_mediator::diddoc::DidDocBuilder;
+use didcomm_mediator::didweb::url_to_did_web;
 use didcomm_mediator::handler::{DidcommHandler, HandlerResponse};
 use didcomm_mediator::message::receive;
 use didcomm_mediator::message::{has_return_route_all_header, sign_and_encrypt};
@@ -69,38 +71,32 @@ async fn oob_invitation_endpoint(config: &State<Config>, wallet: &State<Wallet>)
 }
 
 #[get("/.well-known/did.json")]
-fn did_web_endpoint(config: &State<Config>, wallet: &State<Wallet>) -> Json<Value> {
-    let mut did_doc = wallet.keypair().get_did_document(CONFIG_LD_PUBLIC);
-    did_doc.verification_method[0].private_key = None;
-    let did_key = wallet.did_key();
-    let mut did_doc = serde_json::to_value(&did_doc).unwrap();
-    did_doc["service"] = serde_json::json!([
-      {
-        "id": "2e9e814a-c1e1-416e-a21a-a4182809950c",
-        "serviceEndpoint": [
-      {
-        "uri": config.ext_service,
-        "accept": [
-            "didcomm/v2"
-        ],
-        "recipientKeys": [did_key]
-      },
-      ],
-        "type": "did-communication"
-      },
-    ]);
+async fn did_web_endpoint(config: &State<Config>, wallet: &State<Wallet>) -> Json<Value> {
+    let ext_hostname = config.ext_hostname.to_string();
+    let did_web = url_to_did_web(&ext_hostname);
+
+    let mut did_doc_builder = DidDocBuilder::new();
+    did_doc_builder
+        .did(did_web)
+        .endpoint(config.ext_service.to_string())
+        .keypair(wallet.keypair());
+
     #[cfg(feature = "iota")]
     {
-        did_doc["service"][0]["serviceEndpoint"]
-            .as_array_mut()
-            .unwrap()
-            .push(serde_json::json!({"uri": config.ext_service,
-        "accept": [
-            "didcomm/v2"
-        ],
-        "recipientKeys": [wallet.did_iota()]}));
+        use identity_iota::client::ResolvedIotaDocument;
+        use identity_iota::client::Resolver;
+        use identity_iota::iota_core::IotaDID;
+        use std::str::FromStr;
+        let did = IotaDID::from_str(config.did_iota.as_ref().unwrap()).unwrap();
+
+        let resolver: Resolver = Resolver::new().await.unwrap();
+        let resolved_did_document: ResolvedIotaDocument = resolver.resolve(&did).await.unwrap();
+
+        let document = resolved_did_document.document;
+        did_doc_builder.iota_document(document);
     }
 
+    let did_doc = did_doc_builder.build().unwrap();
     Json(did_doc)
 }
 
